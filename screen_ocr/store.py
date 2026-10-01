@@ -34,7 +34,8 @@ CREATE TABLE IF NOT EXISTS captures (
     category   TEXT    NOT NULL DEFAULT '',
     image      TEXT,
     labels     TEXT    NOT NULL DEFAULT '[]', -- JSON list, at most MAX_LABELS
-    roman      TEXT                           -- readings in Latin letters; NULL until made
+    roman      TEXT,                          -- readings in Latin letters; NULL until made
+    furigana   TEXT                           -- JSON [[kanji, kana], ...]; NULL until made
 );
 CREATE INDEX IF NOT EXISTS captures_created ON captures(created_at);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
@@ -58,7 +59,7 @@ def connect() -> sqlite3.Connection:
     conn.executescript(_SCHEMA)
     # Histories from older versions: add the newer columns in place.
     have = {r["name"] for r in conn.execute("PRAGMA table_info(captures)")}
-    for column, decl in (("labels", "TEXT NOT NULL DEFAULT '[]'"), ("roman", "TEXT")):
+    for column, decl in (("labels", "TEXT NOT NULL DEFAULT '[]'"), ("roman", "TEXT"), ("furigana", "TEXT")):
         if column not in have:
             conn.execute(f"ALTER TABLE captures ADD COLUMN {column} {decl}")
     return conn
@@ -70,14 +71,16 @@ def _fill_readings(conn: sqlite3.Connection) -> None:
     engine = romanize.engine()
     row = conn.execute("SELECT value FROM meta WHERE key = 'roman'").fetchone()
     if not row or row["value"] != engine:  # e.g. pykakasi got installed: redo them all
-        conn.execute("UPDATE captures SET roman = NULL")
+        conn.execute("UPDATE captures SET roman = NULL, furigana = NULL")
         conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('roman', ?)", (engine,))
     done = {}
-    rows = conn.execute("SELECT id, text FROM captures WHERE roman IS NULL").fetchall()
+    rows = conn.execute("SELECT id, text FROM captures WHERE roman IS NULL OR furigana IS NULL").fetchall()
     for r in rows:
         if r["text"] not in done:
-            done[r["text"]] = romanize.romanize(r["text"])
-    conn.executemany("UPDATE captures SET roman = ? WHERE id = ?", [(done[r["text"]], r["id"]) for r in rows])
+            done[r["text"]] = (romanize.romanize(r["text"]),
+                               json.dumps(romanize.furigana(r["text"]), ensure_ascii=False))
+    conn.executemany("UPDATE captures SET roman = ?, furigana = ? WHERE id = ?",
+                     [(*done[r["text"]], r["id"]) for r in rows])
 
 
 def clean_labels(labels: list) -> list:
@@ -100,6 +103,7 @@ def clean_labels(labels: list) -> list:
 def _row(row: sqlite3.Row) -> dict:
     capture = dict(row)
     capture["labels"] = json.loads(capture["labels"] or "[]")
+    capture["furigana"] = json.loads(capture["furigana"] or "[]")
     return capture
 
 

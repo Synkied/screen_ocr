@@ -291,6 +291,12 @@
   .reading { margin: .05rem 0 .1rem 1rem; font: .8rem/1.4 var(--gothic); color: var(--ink-3);
              overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .reading mark { font-weight: 600; }
+  /* Furigana: kana over the kanji, quiet enough to read past; never copied or selected. */
+  ruby { ruby-align: center; }
+  rt { font: 400 .55em/1.2 var(--gothic); color: var(--ink-3); user-select: none; padding-bottom: .1em; }
+  /* Headword and body clip (they clamp lines), so leave room above the first line's kana. */
+  .hw:has(ruby) { line-height: 2; padding-top: .3em; }
+  .body:has(ruby) { line-height: 2.2; padding-top: .25em; }
   .times { font-weight: 600; color: var(--ink-2); cursor: default; }
   .figbtn { display: inline-flex; align-items: center; gap: .25rem; border: 0; background: none; padding: 0;
             color: var(--ink-3); font: inherit; }
@@ -1026,11 +1032,16 @@ function emptyState() {
   return div;
 }
 
+// headAt and restAt say where head and rest start in `text`, to place the furigana.
 function splitText(text) {
-  const lines = text.replace(/\s+$/, "").split("\n");
+  const trimmed = text.replace(/\s+$/, "");
+  const lines = trimmed.split("\n");
   const first = lines.findIndex((l) => l.trim());
-  if (first < 0) return { head: "(blank)", rest: "" };
-  return { head: lines[first].trim(), rest: lines.slice(first + 1).join("\n").replace(/^\s*\n/, "") };
+  if (first < 0) return { head: "(blank)", rest: "", headAt: -1, restAt: -1 };
+  const line = lines[first];
+  const rest = lines.slice(first + 1).join("\n").replace(/^\s*\n/, "");
+  const headAt = lines.slice(0, first).join("\n").length + (first ? 1 : 0) + line.length - line.trimStart().length;
+  return { head: line.trim(), rest, headAt, restAt: trimmed.length - rest.length };
 }
 
 const KANA = /[぀-ヿｦ-ﾟ]/, HANGUL = /[가-힯]/, HAN = /[㐀-䶿一-鿿]/;
@@ -1057,9 +1068,10 @@ function langOf(text) {
 const foldStr = (s) => s.normalize("NFKC").toLowerCase()
   .replace(/[ァ-ヶ]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0x60));
 
-function highlight(el, text) {
+// Where the search hits `text`, as [start, end) pairs.
+function hits(text) {
   const q = foldStr(state.q);
-  if (!q) { el.textContent = text; return; }
+  if (!q) return [];
   // Fold one character at a time (keeping half-width voicing marks with their kana)
   // and remember where each folded character came from, so hits map back to the original.
   let folded = "";
@@ -1073,24 +1085,68 @@ function highlight(el, text) {
     i = j;
   }
   const startOf = (k) => (k < from.length ? from[k] : text.length);
+  const out = [];
   let at = 0, k;
   while ((k = folded.indexOf(q, at)) !== -1) {
     let e = k + q.length;
     while (e < from.length && from[e] === from[e - 1]) e++;  // finish a character that folded to several
-    const a = startOf(k), b = startOf(e);
-    el.append(text.slice(startOf(at), a));
-    const m = document.createElement("mark");
-    m.textContent = text.slice(a, b);
-    el.append(m);
+    out.push([startOf(k), startOf(e)]);
     at = e;
   }
-  el.append(text.slice(startOf(at)));
+  return out;
 }
 
-// Same as romanize.key on the server: letters and digits only, long vowels written once
+// Furigana as [start, end, kana] in `text`: each stored kanji run is found after the one before.
+function rubySpans(text, furigana) {
+  const out = [];
+  let at = 0;
+  for (const [kanji, kana] of furigana || []) {
+    const i = text.indexOf(kanji, at);
+    if (i < 0) break;
+    out.push([i, i + kanji.length, kana]);
+    at = i + kanji.length;
+  }
+  return out;
+}
+
+// Write `text` into `el` with search hits marked and, given spans from rubySpans
+// (shifted to `offset`, where `text` starts in the capture), kana over the kanji.
+function highlight(el, text, spans = [], offset = 0) {
+  const marks = hits(text);
+  const put = (parent, a, b) => {
+    for (const [ma, mb] of marks) {
+      if (mb <= a || ma >= b) continue;
+      if (ma > a) parent.append(text.slice(a, ma));
+      const m = document.createElement("mark");
+      m.textContent = text.slice(Math.max(a, ma), Math.min(b, mb));
+      parent.append(m);
+      a = Math.min(b, mb);
+    }
+    if (a < b) parent.append(text.slice(a, b));
+  };
+  let at = 0;
+  for (let [a, b, kana] of spans) {
+    a -= offset; b -= offset;
+    if (a < at || b > text.length) continue;
+    put(el, at, a);
+    const ruby = document.createElement("ruby");
+    put(ruby, a, b);
+    const rt = document.createElement("rt");
+    rt.textContent = kana;
+    ruby.append(rt);
+    el.append(ruby);
+    at = b;
+  }
+  put(el, at, text.length);
+}
+
+// Same as romanize.key on the server: letters and digits only, no tone marks, long vowels written once
 // (toukyou = tokyo), m before b/p read as n. `from` maps each key character back into `s`.
 function romanKey(s) {
-  const t = s.normalize("NFKC").toLowerCase();
+  const t = [...s.normalize("NFKC").toLowerCase()].map((ch) => {  // ǎ -> a, one letter for one
+    const base = ch.normalize("NFD").replace(/\p{M}/gu, "");
+    return base.length === 1 ? base : ch;
+  }).join("");
   const kept = [];
   for (let i = 0; i < t.length; i++) if (/[a-z0-9]/.test(t[i])) kept.push(i);
   let key = "";
@@ -1122,7 +1178,7 @@ function readingFor(c) {
   if (k < 0) { p.textContent = r; return p; }
   const a = from[k];
   let b = from[k + qk.length - 1] + 1;
-  while (b < r.length && /[aeiou]/.test(r[b]) && !from.includes(b)) b++;  // a long vowel the key folded away
+  while (b < r.length && /[aeiou]/.test(r[b].normalize("NFD")[0]) && !from.includes(b)) b++;  // a long vowel the key folded away
   const m = document.createElement("mark");
   m.textContent = r.slice(a, b);
   p.append(r.slice(0, a), m, r.slice(b));
@@ -1138,7 +1194,7 @@ function readable(head) {
 const icon = (name) => `<svg class="i" aria-hidden="true"><use href="#i-${name}"/></svg>`;
 
 function entry(c) {
-  const { head, rest } = splitText(c.text);
+  const { head, rest, headAt, restAt } = splitText(c.text);
   const short = head.length > 40 ? head.slice(0, 39) + "…" : head;
   const el = document.createElement("article");
   el.className = "entry" + (c.category === "code" ? " code" : "")
@@ -1156,7 +1212,9 @@ function entry(c) {
       <button class="copy" title="Copy (Enter)">${icon("copy")}<span>Copy</span></button>
       <div class="tools"><button class="del">${icon("del")}<span>Delete</span></button></div></div>
     <p class="meta" id="meta-${c.id}"><span class="slot when"></span><span class="slot rep"></span><span class="slot fig"></span><span class="chips"></span></p>`;
-  highlight(el.querySelector(".hw"), readable(head));
+  const spans = lang === "ja" ? rubySpans(c.text, c.furigana) : [];
+  const shown = readable(head);
+  highlight(el.querySelector(".hw"), shown, shown === head ? spans : [], headAt);
   const reading = readingFor(c);
   if (reading) el.querySelector(".hwline").after(reading);
   el.querySelector(".mark").setAttribute("aria-label", `Select “${short}”`);
@@ -1187,7 +1245,7 @@ function entry(c) {
   if (rest) {
     const p = document.createElement("p");
     p.className = "body";
-    highlight(p, rest);
+    highlight(p, rest, spans, restAt);
     meta.after(p);
     const lines = rest.split("\n").length;
     if (lines > 5 || rest.length > 360) {

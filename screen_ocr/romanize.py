@@ -25,8 +25,8 @@ def _load() -> None:
             _kakasi = False
     if _pinyin is None:
         try:
-            from pypinyin import lazy_pinyin
-            _pinyin = lazy_pinyin
+            from pypinyin import Style, lazy_pinyin
+            _pinyin = lambda text: lazy_pinyin(text, style=Style.TONE)  # nǐ hǎo, with tone marks
         except ImportError:
             _pinyin = False
 
@@ -34,7 +34,7 @@ def _load() -> None:
 def engine() -> str:
     """Names what the readings were made with; stored readings are redone when it changes."""
     _load()
-    return "3" + ("+kakasi" if _kakasi else "") + ("+pinyin" if _pinyin else "")
+    return "5" + ("+kakasi" if _kakasi else "") + ("+pinyin" if _pinyin else "")
 
 
 def missing() -> list:
@@ -126,7 +126,14 @@ def _could_be_japanese(line: str) -> bool:
 
 
 def _tidy(reading: str) -> str:
-    return " ".join(re.sub(r"[^0-9A-Za-z'\-]+", " ", unicodedata.normalize("NFKC", reading)).split()).lower()
+    # À-ɏ keeps accented Latin letters, so pinyin keeps its tone marks
+    return " ".join(re.sub(r"[^0-9A-Za-zÀ-ɏ'\-]+", " ", unicodedata.normalize("NFKC", reading)).split()).lower()
+
+
+def _plain(ch: str) -> str:
+    """ǎ -> a, ü -> u: one letter without its marks, so readings match however they're typed."""
+    base = "".join(c for c in unicodedata.normalize("NFD", ch) if not unicodedata.combining(c))
+    return base if len(base) == 1 else ch
 
 
 def romanize(text: str) -> str:
@@ -152,11 +159,51 @@ def romanize(text: str) -> str:
     return "\n".join(out)
 
 
+# --- furigana ------------------------------------------------------------------
+
+_KANJI_RUN = re.compile("([㐀-䶿一-鿿々〆]+)")
+
+
+def _hira(text: str) -> str:
+    return "".join(chr(ord(c) - 0x60) if "ァ" <= c <= "ヶ" else c for c in text)
+
+
+def _split_word(orig: str, reading: str) -> list:
+    """Give each kanji run of a word its share of the reading, using the kana between
+    them as anchors: 取り扱い + とりあつかい -> 取 と, 扱 あつか. Falls back to the
+    whole word when the kana don't line up (e.g. 今日は read こんにちは)."""
+    runs = [r for r in _KANJI_RUN.split(orig) if r]
+    pattern = "".join("(.+?)" if _KANJI_RUN.fullmatch(r) else re.escape(_hira(r)) for r in runs)
+    m = re.fullmatch(pattern, _hira(reading))
+    if not m:
+        return [[orig, reading]]
+    kanji = [r for r in runs if _KANJI_RUN.fullmatch(r)]
+    return [[k, rd] for k, rd in zip(kanji, m.groups())]
+
+
+def furigana(text: str) -> list:
+    """Hiragana readings for the kanji in Japanese text, as [kanji, reading] pairs in
+    the order they appear (each kanji run is found after the previous one). Empty
+    without pykakasi, and for lines that can only be Chinese."""
+    _load()
+    if not _kakasi:
+        return []
+    out = []
+    for line in text.split("\n"):
+        if not HAN.search(line) or HANGUL.search(line) or not (KANA.search(line) or _could_be_japanese(line)):
+            continue
+        for part in _kakasi.convert(line):
+            orig, reading = part["orig"], part["hira"]
+            if _KANJI_RUN.search(orig) and reading and not HAN.search(reading):
+                out.extend(_split_word(orig, reading))
+    return out
+
+
 def key(text: str) -> str:
-    """Search key that forgives how people type readings: no spaces or punctuation,
-    long vowels written once (toukyou = tokyo), and m/n before b/p (shimbun = shinbun).
+    """Search key that forgives how people type readings: no spaces, punctuation or
+    tone marks (nihao = nǐ hǎo), long vowels written once (toukyou = tokyo), and m/n before b/p (shimbun = shinbun).
     web.html has the same function as romanKey; keep them in step."""
-    t = re.sub("[^a-z0-9]", "", unicodedata.normalize("NFKC", text).lower())
+    t = re.sub("[^a-z0-9]", "", "".join(map(_plain, unicodedata.normalize("NFKC", text).lower())))
     out = []
     for i, ch in enumerate(t):
         prev = out[-1] if out else ""
