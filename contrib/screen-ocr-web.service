@@ -1,0 +1,16 @@
+# The history page as an always-on user service, e.g. on a Raspberry Pi.
+#   1. Edit ExecStart: the path to your venv, and your machine's Tailscale name
+#      (`tailscale status --self` shows it, as <machine>.<tailnet>.ts.net).
+#   2. cp contrib/screen-ocr-web.service ~/.config/systemd/user/
+#      systemctl --user daemon-reload && systemctl --user enable --now screen-ocr-web
+#      sudo loginctl enable-linger $USER    # keep it running without a login
+[Unit]
+Description=screen-ocr capture history
+After=network-online.target
+
+[Service]
+ExecStart=%h/screen_ocr/.venv/bin/screen-ocr --web --no-browser --allow-host pi.example-tailnet.ts.net
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

@@ -6,17 +6,21 @@ in a fresh process, which keeps pynput and Tk out of each other's way
 directly to a desktop shortcut, which is the way to go on Wayland.
 
 Every capture is also saved to a local history; `screen-ocr --web` opens a
-page to browse, classify and delete it.
+page to browse, classify and delete it. With --server, captures go to a
+history on another machine instead (see remote.py).
 """
 
 import argparse
 import os
 import subprocess
 import sys
+import threading
+import time
 
 DEFAULT_HOTKEY = "<ctrl>+<alt>+o"
 DEFAULT_PORT = 8765
 LOG_PATH = os.path.expanduser("~/.cache/screen-ocr.log")
+RETRY_EVERY = 300  # seconds between the hotkey listener's tries to empty the outbox
 
 
 def main() -> None:
@@ -34,11 +38,24 @@ def main() -> None:
                         help="open the capture history in your browser")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT,
                         help=f"port for --web (default: {DEFAULT_PORT})")
+    parser.add_argument("--server", default=os.environ.get("SCREEN_OCR_SERVER") or None, metavar="URL",
+                        help="send captures to the history at URL (e.g. https://pi.tailnet.ts.net) "
+                             "instead of keeping them here; default: $SCREEN_OCR_SERVER")
+    parser.add_argument("--allow-host", action="append", default=[], metavar="NAME",
+                        help="with --web: also answer requests for NAME, e.g. the Tailscale name "
+                             "`tailscale serve` puts in front of it (repeatable)")
+    parser.add_argument("--no-browser", action="store_true",
+                        help="with --web: don't open a browser (for a headless server)")
     args = parser.parse_args()
 
     if args.web:
+        if args.server:  # the history lives over there; show that one
+            import webbrowser
+            print(f"history is on {args.server}")
+            webbrowser.open(args.server)
+            return
         from . import web
-        web.serve(args.port)
+        web.serve(args.port, open_browser=not args.no_browser, allow_hosts=tuple(args.allow_host))
         return
 
     # Launched from a desktop shortcut there's no terminal: keep errors somewhere.
@@ -63,12 +80,12 @@ def main() -> None:
         sys.exit(str(e))
 
     if args.once:
-        run_once(lang, save=not args.no_save)
+        run_once(lang, save=not args.no_save, server=args.server)
     else:
-        run_daemon(args.hotkey, lang, save=not args.no_save)
+        run_daemon(args.hotkey, lang, save=not args.no_save, server=args.server)
 
 
-def run_daemon(hotkey: str, lang: str, save: bool = True) -> None:
+def run_daemon(hotkey: str, lang: str, save: bool = True, server=None) -> None:
     if os.environ.get("WAYLAND_DISPLAY"):
         print("Wayland detected: global hotkeys don't work here.\n"
               "Bind `screen-ocr --once` to a shortcut in your desktop settings instead.",
@@ -85,7 +102,18 @@ def run_daemon(hotkey: str, lang: str, save: bool = True) -> None:
         cmd = [sys.executable, "-m", "screen_ocr", "--once", "--lang", lang]
         if not save:
             cmd.append("--no-save")
+        if server:
+            cmd += ["--server", server]
         current = subprocess.Popen(cmd)
+
+    if server:
+        # Captures taken while the server was unreachable go out once it's back.
+        def retry():
+            from . import remote
+            while True:
+                remote.flush(server)
+                time.sleep(RETRY_EVERY)
+        threading.Thread(target=retry, daemon=True).start()
 
     print(f"screen-ocr ready: press {hotkey} to capture, Ctrl+C to quit")
     with keyboard.GlobalHotKeys({hotkey: trigger}) as listener:
@@ -95,7 +123,7 @@ def run_daemon(hotkey: str, lang: str, save: bool = True) -> None:
             pass
 
 
-def run_once(lang: str, save: bool = True) -> None:
+def run_once(lang: str, save: bool = True, server=None) -> None:
     try:
         import tkinter as tk
     except ImportError:
@@ -119,7 +147,7 @@ def run_once(lang: str, save: bool = True) -> None:
                 output.notify(f"Copied {len(text)} characters", text)
                 print(text)
                 if save:
-                    _save(text, image)
+                    _save(text, image, server)
             else:
                 output.notify("No text found")
         finally:
@@ -142,10 +170,15 @@ def run_once(lang: str, save: bool = True) -> None:
         pass
 
 
-def _save(text, image) -> None:
+def _save(text, image, server=None) -> None:
     # The clipboard copy already happened; a broken history must not undo that.
     try:
-        from . import classify, store
-        store.add(text, image, classify.guess(text))
+        from . import classify
+        if server:
+            from . import remote
+            remote.send(server, text, image, classify.guess(text))
+        else:
+            from . import store
+            store.add(text, image, classify.guess(text))
     except Exception as e:  # noqa: BLE001
         print(f"could not save to history: {e}", file=sys.stderr)

@@ -107,11 +107,19 @@ def _row(row: sqlite3.Row) -> dict:
     return capture
 
 
-def add(text: str, image: Optional[Image.Image], category: str = "") -> int:
+def add(text: str, image: Optional[Image.Image], category: str = "",
+        created_at: Optional[float] = None) -> int:
+    """Save a capture. One sent from another machine keeps the time it was taken, and
+    sending it again (a retry whose answer got lost) returns the one already saved."""
     with connect() as conn:
+        if created_at is not None:
+            row = conn.execute("SELECT id FROM captures WHERE created_at = ? AND text = ?",
+                               (created_at, text)).fetchone()
+            if row:
+                return row["id"]
         cur = conn.execute(
             "INSERT INTO captures (created_at, text, category) VALUES (?, ?, ?)",
-            (time.time(), text, category),
+            (time.time() if created_at is None else created_at, text, category),
         )
         capture_id = cur.lastrowid
         if image is not None:
