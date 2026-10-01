@@ -573,11 +573,35 @@ function note(message) {
   problemTimer = setTimeout(() => { if (!state.error && !state.stale) el.hidden = true; }, 8000);
 }
 
-async function load({ keepScroll = false } = {}) {
+function filterParams() {
   const params = new URLSearchParams();
   if (state.q) params.set("q", state.q);
   if (state.category !== null) params.set("category", state.category);
   if (state.label !== null) params.set("label", state.label);
+  return params;
+}
+
+// The search and filters live in the page's URL too, so a reload, a bookmark or a shared
+// link opens the same view. A new category or label is a step Back undoes; typing isn't.
+function syncUrl(params, replace = false) {
+  const search = params.toString() ? "?" + params : "";
+  if (search === location.search) return;
+  const was = new URLSearchParams(location.search);
+  const filterChanged = ["category", "label"].some((k) => was.get(k) !== params.get(k));
+  history[filterChanged && !replace ? "pushState" : "replaceState"](null, "", location.pathname + search + location.hash);
+}
+
+function readUrl() {
+  const params = new URLSearchParams(location.search);
+  state.q = (params.get("q") || "").trim();
+  state.category = params.get("category");  // present but empty: uncategorized
+  state.label = params.get("label");
+  $("q").value = state.q;
+}
+
+async function load({ keepScroll = false } = {}) {
+  const params = filterParams();
+  syncUrl(params);
   let data;
   try { data = withoutPending(await api("GET", "/api/captures?" + params)); } catch { return; }
   // The page is read from disk on every load but the server's code isn't: say so
@@ -608,6 +632,7 @@ async function load({ keepScroll = false } = {}) {
   // "uncategorized" is filed at the back of the book, not the front
   state.categories = data.categories.filter((c) => c.category).concat(data.categories.filter((c) => !c.category));
   if (state.category !== null && !state.categories.some((c) => c.category === state.category)) state.category = null;
+  syncUrl(filterParams(), true);  // a category or label that no longer exists drops out of the URL too
   const ids = new Set(data.captures.map((c) => c.id));
   state.selected = new Set([...state.selected].filter((id) => ids.has(id)));
   // Guess from the whole history only, so a search doesn't flip how kanji are read
@@ -1707,6 +1732,8 @@ $("q").oninput = (e) => {
   }, 160);
 };
 window.onfocus = () => load({ keepScroll: true });  // pick up captures made while the tab was in the background
+window.onpopstate = () => { clearTimeout(timer); readUrl(); window.scrollTo(0, 0); load(); };
+readUrl();
 load();
 </script>
 </body>
