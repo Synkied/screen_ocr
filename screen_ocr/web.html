@@ -305,6 +305,12 @@
   .body { margin-top: .25rem; margin-bottom: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink-2);
           font: 1rem/1.55 var(--serif); }
   .entry.code .body { font-size: .85rem; line-height: 1.55; }
+  /* Lines kept whole, and the font sized so the widest one fills the column, or the
+     picture falls apart. --glyph is the monospace glyph's width in em, measured below. */
+  .entry.ascii { container-type: inline-size; }
+  .entry.ascii .body { font: 400 min(.9rem, 100cqi / (var(--cols, 80) * var(--glyph, .62)))/1.05 var(--mono);
+                       letter-spacing: 0; white-space: pre; overflow-wrap: normal; overflow: hidden;
+                       color: var(--ink); }
   .body.clamp { display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
   .more { border: 0; background: none; padding: 0; margin-top: .2rem; color: var(--spot);
           font: 600 .75rem/1.4 var(--gothic); }
@@ -1032,6 +1038,21 @@ function emptyState() {
   return div;
 }
 
+// How wide a monospace glyph is, in em, so ASCII art can be sized to fill its column.
+function measureGlyph() {
+  const ctx = document.createElement("canvas").getContext("2d");
+  ctx.font = `100px ${getComputedStyle(document.documentElement).getPropertyValue("--mono")}`;
+  const em = ctx.measureText("@".repeat(10)).width / 1000;
+  if (em > 0) document.documentElement.style.setProperty("--glyph", em.toFixed(4));
+}
+measureGlyph();
+
+// A picture saved as ASCII art has no headword: it's titled, and all of it is the body.
+function parts(c) {
+  if (c.category === "ascii") return { head: "ASCII art", rest: c.text, headAt: -1, restAt: 0 };
+  return splitText(c.text);
+}
+
 // headAt and restAt say where head and rest start in `text`, to place the furigana.
 function splitText(text) {
   const trimmed = text.replace(/\s+$/, "");
@@ -1194,10 +1215,10 @@ function readable(head) {
 const icon = (name) => `<svg class="i" aria-hidden="true"><use href="#i-${name}"/></svg>`;
 
 function entry(c) {
-  const { head, rest, headAt, restAt } = splitText(c.text);
+  const { head, rest, headAt, restAt } = parts(c);
   const short = head.length > 40 ? head.slice(0, 39) + "…" : head;
   const el = document.createElement("article");
-  el.className = "entry" + (c.category === "code" ? " code" : "")
+  el.className = "entry" + (c.category === "code" ? " code" : c.category === "ascii" ? " ascii" : "")
     + (state.selected.has(c.id) ? " sel" : "") + (c.copies.some((x) => ticks.has(x.id)) ? " ticked" : "");
   el.tabIndex = 0;
   el.dataset.id = c.id;
@@ -1246,9 +1267,10 @@ function entry(c) {
     const p = document.createElement("p");
     p.className = "body";
     highlight(p, rest, spans, restAt);
+    if (c.category === "ascii") p.style.setProperty("--cols", Math.max(...rest.split("\n").map((l) => l.length)));
     meta.after(p);
     const lines = rest.split("\n").length;
-    if (lines > 5 || rest.length > 360) {
+    if (c.category !== "ascii" && (lines > 5 || rest.length > 360)) {
       p.classList.add("clamp");
       const more = document.createElement("button");
       more.className = "more";
@@ -1483,7 +1505,7 @@ async function copyEntry(el, c) {
     el.querySelector(".copy span").textContent = "Copy";
   }, 1200);
   const folio = $("folio");
-  const head = splitText(c.text).head;
+  const head = parts(c).head;
   folio.classList.add("flash");
   folio.innerHTML = "Copied <b></b>";
   folio.querySelector("b").textContent = head.length > 24 ? head.slice(0, 23) + "…" : head;

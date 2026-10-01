@@ -21,9 +21,15 @@ OUTBOX = os.path.join(data_dir(), "outbox")
 TIMEOUT = 10  # seconds; runs after the clipboard copy, so nobody is waiting on it
 
 
+def server_url(server: str) -> str:
+    """rpi.tailnet.ts.net -> https://rpi.tailnet.ts.net: a bare name means HTTPS, as tailscale serve speaks."""
+    server = server.strip().rstrip("/")
+    return server if "://" in server else "https://" + server
+
+
 def _post(server: str, payload: dict) -> None:
     req = urllib.request.Request(
-        server.rstrip("/") + "/api/captures",
+        server_url(server) + "/api/captures",
         data=json.dumps(payload).encode(),
         headers={"Content-Type": "application/json"},
         method="POST",

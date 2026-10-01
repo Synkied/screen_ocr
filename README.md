@@ -39,10 +39,11 @@ screen-ocr --once                 # capture right away, then exit
 ```
 
 Drag to select. Esc or right-click cancels. When it finishes, a notification shows what was copied.
+If the selection has no text in it (a face, a photo, an icon), you get it as ASCII art instead.
 
 ### History
 Every capture is saved with its cropped screenshot and a guessed category
-(link, email, number, code, japanese, chinese, korean or text). To browse them:
+(link, email, number, code, japanese, chinese, korean or text; pictures go under ascii). To browse them:
 
 ```bash
 screen-ocr --web                  # opens http://127.0.0.1:8765

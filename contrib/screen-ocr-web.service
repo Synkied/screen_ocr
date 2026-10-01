@@ -4,6 +4,9 @@
 #   2. cp contrib/screen-ocr-web.service ~/.config/systemd/user/
 #      systemctl --user daemon-reload && systemctl --user enable --now screen-ocr-web
 #      sudo loginctl enable-linger $USER    # keep it running without a login
+#   3. It's a user service, so every command needs --user (and no sudo):
+#      systemctl --user status screen-ocr-web
+#      journalctl --user -u screen-ocr-web -f
 [Unit]
 Description=screen-ocr capture history
 After=network-online.target

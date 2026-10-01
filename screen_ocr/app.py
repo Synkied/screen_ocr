@@ -47,6 +47,9 @@ def main() -> None:
     parser.add_argument("--no-browser", action="store_true",
                         help="with --web: don't open a browser (for a headless server)")
     args = parser.parse_args()
+    if args.server:
+        from .remote import server_url
+        args.server = server_url(args.server)
 
     if args.web:
         if args.server:  # the history lives over there; show that one
@@ -129,7 +132,7 @@ def run_once(lang: str, save: bool = True, server=None) -> None:
     except ImportError:
         sys.exit("tkinter not found. Install it: `sudo apt install python3-tk` / `brew install python-tk`")
 
-    from . import output
+    from . import ascii, output
     from .capture import grab_at
     from .ocr import recognize
     from .overlay import RegionSelector
@@ -142,14 +145,20 @@ def run_once(lang: str, save: bool = True, server=None) -> None:
             if image is None:
                 return
             text = recognize(image, lang)
-            if text:
+            if ascii.looks_like_text(text):
                 output.copy(text)
                 output.notify(f"Copied {len(text)} characters", text)
                 print(text)
                 if save:
                     _save(text, image, server)
             else:
-                output.notify("No text found")
+                # A face, photo or icon: hand back a picture made of characters.
+                art = ascii.render(image)
+                output.copy(art)
+                output.notify("No text found", "Copied the picture as ASCII art")
+                print(art)
+                if save:
+                    _save(art, image, server, category="ascii")
         finally:
             root.quit()
 
@@ -170,15 +179,16 @@ def run_once(lang: str, save: bool = True, server=None) -> None:
         pass
 
 
-def _save(text, image, server=None) -> None:
+def _save(text, image, server=None, category=None) -> None:
     # The clipboard copy already happened; a broken history must not undo that.
     try:
         from . import classify
+        category = category or classify.guess(text)
         if server:
             from . import remote
-            remote.send(server, text, image, classify.guess(text))
+            remote.send(server, text, image, category)
         else:
             from . import store
-            store.add(text, image, classify.guess(text))
+            store.add(text, image, category)
     except Exception as e:  # noqa: BLE001
         print(f"could not save to history: {e}", file=sys.stderr)
