@@ -9,6 +9,9 @@ dependencies = [
     "pytesseract>=0.3.10",
     "pynput>=1.7.6",
     "pyperclip>=1.8",
+    # readings in Latin letters for kanji and hanzi, so 東京 shows and finds as "tokyo"
+    "pykakasi>=2.2",
+    "pypinyin>=0.49",
 ]
 
 [project.scripts]

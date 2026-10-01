@@ -11,11 +11,14 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from . import store
+from . import romanize, store
 
 PAGE = os.path.join(os.path.dirname(__file__), "web.html")
 _IMAGE_NAME = re.compile(r"^\d+\.png$")
 _CAPTURE_PATH = re.compile(r"^/api/captures/(\d+)$")
+# Bumped when the API changes, so a page newer than the running server can say
+# "restart" instead of failing on endpoints the old process doesn't know.
+API_VERSION = 3
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -73,9 +76,13 @@ class Handler(BaseHTTPRequestHandler):
             qs = parse_qs(url.query)
             query = qs.get("q", [""])[0]
             category = qs["category"][0] if "category" in qs else None
+            label = qs["label"][0] if "label" in qs else None
             return self._json({
-                "captures": store.search(query, category),
+                "api": API_VERSION,
+                "captures": store.search(query, category, label),
                 "categories": store.categories(),
+                "labels": store.labels(),
+                "missing": romanize.missing(),
             })
         if url.path.startswith("/images/"):
             name = url.path[len("/images/"):]
@@ -99,10 +106,39 @@ class Handler(BaseHTTPRequestHandler):
         if not self._trusted():
             return self._error(403, "forbidden")
         body = self._json_body()
-        if urlparse(self.path).path != "/api/captures/delete" or not isinstance(body, dict):
-            return self._error(400, "expected {\"ids\": [int]}")
-        ids = [i for i in body.get("ids", []) if isinstance(i, int)]
-        self._json({"deleted": store.delete(ids)})
+        path = urlparse(self.path).path
+        if not isinstance(body, dict):
+            return self._error(400, "expected a JSON object")
+        if path == "/api/captures/delete":
+            ids = [i for i in body.get("ids", []) if isinstance(i, int)]
+            return self._json({"deleted": store.delete(ids)})
+        if path == "/api/captures/category":
+            changes = body.get("changes")
+            if not isinstance(changes, list) or not all(
+                    isinstance(c, dict) and isinstance(c.get("id"), int) and isinstance(c.get("category"), str)
+                    for c in changes):
+                return self._error(400, "expected {\"changes\": [{\"id\": int, \"category\": str}]}")
+            store.set_categories([(c["id"], c["category"].strip()) for c in changes])
+            return self._json({"ok": True})
+        if path == "/api/captures/labels":
+            changes = body.get("changes")
+            if not isinstance(changes, list) or not all(
+                    isinstance(c, dict) and isinstance(c.get("id"), int) and isinstance(c.get("labels"), list)
+                    and all(isinstance(label, str) for label in c["labels"])
+                    for c in changes):
+                return self._error(400, "expected {\"changes\": [{\"id\": int, \"labels\": [str]}]}")
+            try:
+                cleaned = [(c["id"], store.clean_labels(c["labels"])) for c in changes]
+            except ValueError as err:
+                return self._error(400, str(err))
+            store.set_labels(cleaned)
+            return self._json({"ok": True})
+        if path == "/api/categories/rename":
+            old, new = body.get("from"), body.get("to")
+            if not isinstance(old, str) or not isinstance(new, str):
+                return self._error(400, "expected {\"from\": str, \"to\": str}")
+            return self._json({"ids": store.rename_category(old, new.strip())})
+        self._error(404, "not found")
 
 
 def serve(port: int, open_browser: bool = True) -> None:

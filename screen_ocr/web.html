@@ -3,236 +3,1710 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Screen OCR History</title>
+<meta name="color-scheme" content="light dark">
+<title>Screen OCR · Your dictionary</title>
 <style>
   :root {
-    --bg: #f6f7f9; --panel: #fff; --text: #1d2330; --muted: #6b7384;
-    --border: #e1e4ea; --accent: #0a84d6; --danger: #d33a3a; --chip: #eef1f5;
+    /* two-colour print: one ink ramp + one spot blue */
+    --paper: #f5f7fa;
+    --paper-2: #e9edf2;
+    --ink: #15171a;
+    --ink-2: #3d4046;
+    --ink-3: #62666d;
+    --rule: #c4cad3;
+    --rule-soft: #dce1e8;
+    --spot: #1a47b8;
+    --spot-wash: #dde5f6;
+    --on-ink: #f5f7fa;
+    --tab: var(--ink);
+
+    --serif: "Iowan Old Style", "Charter", "Sitka Text", Cambria, "Noto Serif",
+             "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif CJK JP", "Source Han Serif",
+             "Noto Serif CJK SC", "Songti SC", serif;
+    --gothic: system-ui, -apple-system, "Segoe UI", "Hiragino Kaku Gothic ProN", "Yu Gothic UI",
+              "Noto Sans CJK JP", "Source Han Sans", "Microsoft YaHei", sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Noto Sans Mono CJK JP", monospace;
+
+    --tab-w: 3.25rem;
+    --head-h: 3.75rem;
+    --step: 90ms steps(2, jump-end);
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #15181e; --panel: #1d2129; --text: #e6e8ec; --muted: #9098a8;
-      --border: #2c313b; --accent: #4cc2ff; --danger: #ff6b6b; --chip: #262b35;
+      /* the vinyl cover: ink ground, paper type, lifted spot */
+      --paper: #121419;
+      --paper-2: #1a1d24;
+      --ink: #ebeae4;
+      --ink-2: #c4c5c3;
+      --ink-3: #9a9ea6;
+      --rule: #3a3e48;
+      --rule-soft: #282c34;
+      --spot: #92b2ff;
+      --spot-wash: #1f2a45;
+      --on-ink: #121419;
+      --tab: #a7a9ae;  /* dimmed so the index doesn't outshine the headwords */
     }
   }
+
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text);
-         font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  html { scroll-padding-top: calc(var(--head-h) + 1rem); }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font: 15px/1.6 var(--serif);
+    caret-color: var(--spot);
+    -webkit-font-smoothing: antialiased;
+    scrollbar-color: var(--rule) transparent;
+  }
+  ::selection { background: var(--spot-wash); color: var(--ink); }
   button, input { font: inherit; color: inherit; }
-  button { background: var(--chip); border: 1px solid var(--border); border-radius: 6px;
-           padding: 4px 10px; cursor: pointer; }
-  button:hover { border-color: var(--accent); }
-  button.danger { color: var(--danger); }
-  button:disabled { opacity: .5; cursor: default; }
-  input[type=text], input[type=search] { background: var(--panel); border: 1px solid var(--border);
-           border-radius: 6px; padding: 5px 9px; }
+  button { cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--spot); outline-offset: 2px; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  svg.i { width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 1.6;
+          stroke-linecap: round; stroke-linejoin: round; flex: none; }
+  /* Small text buttons keep their look but get a hit area of at least 24px. */
+  .copy, .label, .figbtn, .tools button, .more, .helpbtn { position: relative; }
+  .copy::after, .label::after, .figbtn::after, .tools button::after, .more::after, .helpbtn::after {
+    content: ""; position: absolute; inset: -4px -3px; }
+  .skip { position: fixed; left: 1rem; top: -4rem; z-index: 20; padding: .4rem .8rem; border-radius: 3px;
+          background: var(--ink); color: var(--on-ink); font: 600 .8rem/1.3 var(--gothic); text-decoration: none; }
+  .skip:focus { top: .6rem; }
 
-  .layout { display: grid; grid-template-columns: 200px 1fr; min-height: 100vh; }
-  aside { border-right: 1px solid var(--border); padding: 16px 10px; background: var(--panel); }
-  aside h1 { font-size: 15px; margin: 0 6px 14px; }
-  aside a { display: flex; justify-content: space-between; padding: 5px 8px; border-radius: 6px;
-            color: var(--text); text-decoration: none; }
-  aside a:hover { background: var(--chip); }
-  aside a.active { background: var(--accent); color: #fff; }
-  aside a span { opacity: .7; }
+  /* ---- running head ------------------------------------------------------ */
+  .head {
+    position: sticky; top: 0; z-index: 5; background: var(--paper);
+    height: var(--head-h); margin-right: var(--tab-w);
+    display: grid; grid-template-columns: 1fr minmax(16rem, 28rem) 1fr; gap: 1.5rem; align-items: center;
+    padding: 0 2.5rem;
+    border-bottom: 1px solid var(--ink);
+    box-shadow: 0 3px 0 -2px var(--paper), 0 4px 0 -2px var(--ink);  /* the double rule */
+  }
+  .title { margin: 0; font: 700 1.15rem/1.2 var(--serif); letter-spacing: -.01em; white-space: nowrap; }
+  .look { display: flex; align-items: center; gap: .55rem; border-bottom: 1px solid var(--ink-3);
+          padding: .2rem 0; color: var(--ink-3); }
+  .look:focus-within { border-color: var(--spot); color: var(--spot); }
+  .look input { flex: 1; min-width: 0; border: 0; background: none; outline: none; padding: .15rem 0;
+                font: 1.05rem/1.4 var(--serif); color: var(--ink); }
+  .look input::placeholder { color: var(--ink-3); font-style: italic; }
+  .look input::-webkit-search-cancel-button { display: none; }
+  .look kbd { font: 600 .7rem/1 var(--gothic); border: 1px solid var(--rule); border-radius: 3px;
+              padding: .2rem .35rem; color: var(--ink-3); }
+  .look:focus-within kbd { visibility: hidden; }
+  .filter { flex: none; display: inline-flex; align-items: center; gap: .3rem; max-width: 12rem;
+            border: 0; border-radius: 2px; background: var(--spot); color: var(--paper);
+            padding: .1rem .45rem; font: 600 .72rem/1.3 var(--gothic); }
+  .filter[hidden] { display: none; }
+  .filter span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .filter:hover { text-decoration: line-through; }
+  .headend { justify-self: end; display: flex; align-items: center; gap: 1.25rem; }
+  .folio { margin: 0; font: .78rem/1.3 var(--gothic); color: var(--ink-3); text-align: right;
+           font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .helpbtn { border: 0; background: none; padding: .2rem 0; color: var(--ink-3); font: .78rem/1.3 var(--gothic); }
+  .helpbtn:hover, .helpbtn[aria-expanded="true"] { color: var(--spot); }
+  .folio b { color: var(--ink); font-weight: 600; }
+  .folio.flash { color: var(--spot); }
+  .folio.flash b { color: var(--spot); }
 
-  main { padding: 16px 20px; max-width: 980px; }
-  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; position: sticky;
-             top: 0; background: var(--bg); padding: 6px 0 12px; z-index: 1; }
-  .toolbar input[type=search] { flex: 1; min-width: 180px; }
-  .count { color: var(--muted); margin-left: auto; }
+  /* ---- thumb index -------------------------------------------------------- */
+  .tabs {
+    position: fixed; top: 0; right: 0; bottom: 0; width: var(--tab-w); z-index: 6;
+    display: flex; flex-direction: column; gap: 3px; padding: .75rem 0;
+    overflow-y: auto; overflow-x: hidden; scrollbar-width: thin;
+    border-left: 1px solid var(--rule-soft);
+    background: var(--paper);
+  }
+  .tab {
+    /* Grow to share spare room, but never shrink below the label: when the
+       categories outgrow the screen, the strip scrolls instead of clipping. */
+    flex: 1 0 auto; min-height: 3rem; max-height: 9.5rem;
+    border: 0; border-radius: 4px 0 0 4px;
+    background: var(--tab); color: var(--on-ink);
+    writing-mode: vertical-rl; text-orientation: mixed;
+    display: flex; align-items: center; justify-content: space-between; gap: .5rem;
+    padding: .75rem 0; font: 600 .8rem/1 var(--gothic); letter-spacing: .02em;
+    transform: translateX(.6rem);
+    transition: transform var(--step), background var(--step);
+  }
+  /* A long category name ends in an ellipsis instead of running off the tab. */
+  .tab span:first-child { min-height: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tab .n { flex: none; }
+  .tabmore { flex: none; height: 1.75rem; border: 0; background: none; color: var(--spot); padding: 0;
+             display: grid; place-items: center; border-radius: 3px; }
+  .tabmore svg { width: 1.1rem; height: 1.1rem; fill: currentColor; stroke: none; }
+  .tabmore:hover, .tabmore[aria-expanded="true"] { background: var(--spot-wash); }
+  .tabs.more-after { mask-image: linear-gradient(to bottom, #000 calc(100% - 3.5rem), transparent); }
+  .tabs.more-before { mask-image: linear-gradient(to bottom, transparent, #000 3.5rem); }
+  .tabs.more-before.more-after { mask-image: linear-gradient(to bottom, transparent, #000 3.5rem, #000 calc(100% - 3.5rem), transparent); }
+  .tab .n { font-weight: 400; opacity: .72; font-variant-numeric: tabular-nums; }
+  .tab:hover { transform: translateX(.3rem); }
+  .tab[aria-pressed="true"] { background: var(--spot); color: var(--on-ink); transform: none; }
+  .tab:focus-visible { outline-offset: -4px; outline-color: var(--on-ink); }
+  .tab.none { font-style: italic; font-weight: 400; }
 
-  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
-          padding: 10px 12px; margin-bottom: 10px; display: grid;
-          grid-template-columns: auto 1fr; gap: 4px 10px; }
-  .card.selected { border-color: var(--accent); }
-  .card header { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-  .card time { color: var(--muted); font-size: 12px; }
-  .card .cat { width: 120px; padding: 2px 8px; font-size: 12px; }
-  .card .actions { margin-left: auto; display: flex; gap: 6px; }
-  .card .actions button { padding: 2px 8px; font-size: 12px; }
-  .card pre { grid-column: 2; margin: 4px 0 0; white-space: pre-wrap; word-break: break-word;
-              font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; max-height: 16em;
-              overflow: auto; }
-  .card img { grid-column: 2; max-width: 100%; max-height: 90px; border-radius: 6px;
-              border: 1px solid var(--border); cursor: zoom-in; justify-self: start; }
-  .card img.big { max-height: none; cursor: zoom-out; }
-  .empty { color: var(--muted); text-align: center; padding: 60px 0; }
+  /* ---- category menu and help: small panels pinned to what opened them ---- */
+  .panel {
+    position: fixed; z-index: 9; background: var(--paper); color: var(--ink);
+    border: 1px solid var(--ink); border-radius: 4px;  /* a printed edge, no float */
+    font: .85rem/1.4 var(--gothic);
+  }
+  .panel[hidden] { display: none; }
+  .panel:focus { outline: none; }
+  .catmenu { width: 15rem; padding: .35rem; }
+  .catmenu h2 { margin: 0; padding: .45rem .6rem .5rem; border-bottom: 1px solid var(--rule-soft);
+                font: 700 1.05rem/1.3 var(--serif); overflow-wrap: anywhere; }
+  .catmenu h2 small { display: block; font: .75rem/1.4 var(--gothic); color: var(--ink-3); }
+  .catmenu ul { list-style: none; margin: .3rem 0 0; padding: 0; }
+  .catmenu li button { display: flex; width: 100%; align-items: center; gap: .55rem; min-height: 2rem;
+                       border: 0; background: none; border-radius: 3px; padding: .3rem .6rem; text-align: left; }
+  .catmenu li button:hover, .catmenu li button:focus-visible { background: var(--paper-2); outline: none; }
+  .catmenu li button.danger:hover, .catmenu li button.danger:focus-visible { color: #b3261e; }
+  .catmenu form { padding: .5rem .6rem .4rem; display: grid; gap: .5rem; }
+  .catmenu label { font-size: .75rem; color: var(--ink-3); }
+  .catmenu input { width: 100%; border: 0; border-bottom: 1px solid var(--spot); background: none; outline: none;
+                   padding: .2rem 0; font: 700 1rem/1.4 var(--serif); }
+  .catmenu .row { display: flex; justify-content: flex-end; gap: .5rem; }
+  .catmenu .row button { border: 1px solid var(--ink-3); background: none; border-radius: 3px; padding: .25rem .7rem;
+                         font-weight: 600; font-size: .8rem; min-height: 1.75rem; }
+  .catmenu .row button[type="submit"] { border-color: var(--spot); background: var(--spot); color: var(--paper); }
+  .catmenu .row button:disabled { opacity: .45; cursor: default; }
+  @media (prefers-color-scheme: dark) {
+    .catmenu li button.danger:hover, .catmenu li button.danger:focus-visible { color: #ff8a80; } }
 
-  @media (max-width: 640px) {
-    .layout { grid-template-columns: 1fr; }
-    aside { border-right: 0; border-bottom: 1px solid var(--border); display: flex;
-            flex-wrap: wrap; gap: 4px; align-items: center; }
-    aside h1 { width: 100%; }
-    main { padding: 12px 16px; }
+  .help { width: min(34rem, calc(100vw - 2rem)); padding: 1rem 1.25rem 1.1rem; color: var(--ink-2); }
+  .help h2 { margin: 0 0 .6rem; font: 700 1.05rem/1.3 var(--serif); color: var(--ink); }
+  .help dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .25rem 1.5rem; margin: 0; }
+  .help dl div { display: flex; gap: .6rem; align-items: baseline; }
+  .help dt { flex: none; min-width: 4.2rem; }
+  .help dd { margin: 0; }
+  .help p { margin: .85rem 0 0; color: var(--ink-3); max-width: 62ch; }
+  .help kbd {
+    font: 600 .75em/1 var(--gothic); border: 1px solid var(--rule); border-bottom-width: 2px;
+    border-radius: 3px; padding: .15em .4em; color: var(--ink); background: var(--paper);
+  }
+
+  /* ---- the book ----------------------------------------------------------- */
+  main { margin-right: var(--tab-w); padding: 0 2.5rem 8rem; }
+  .book { max-width: 72rem; margin: 0 auto; }
+
+  .day { padding-top: 2.5rem; }
+  .opener { display: flex; align-items: baseline; gap: .85rem; margin: 0 0 1rem;
+            padding-bottom: .5rem; border-bottom: 1px solid var(--ink); font-weight: 400; }
+  .opener .d { font: 700 2.5rem/0.9 var(--serif); letter-spacing: -.03em; font-variant-numeric: lining-nums; }
+  .opener .m { font: 1.05rem/1.3 var(--serif); }
+  /* A day with only a few entries gets a run-in dateline, not a section opener. */
+  .day.small { padding-top: 1.75rem; }
+  .opener.compact { gap: .5rem; margin-bottom: .6rem; padding-bottom: .35rem; border-bottom-color: var(--rule); }
+  .opener.compact .d { font-size: 1.05rem; line-height: 1.3; letter-spacing: 0; }
+  .opener .rel { font: italic 1.05rem/1.3 var(--serif); color: var(--ink-3); }
+  .opener .c { margin-left: auto; font: .78rem/1 var(--gothic); color: var(--ink-3);
+               font-variant-numeric: tabular-nums; }
+
+  /* Two real columns, split once when the spread is laid out, so opening a figure
+     or "more" grows its own column instead of reflowing entries across the rule. */
+  .cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+  .col { min-width: 0; }
+  .col:first-child { padding-right: 1.75rem; }
+  .col + .col { padding-left: 1.75rem; border-left: 1px solid var(--rule); align-self: stretch; }
+  .spread + .spread { margin-top: 1.25rem; }
+  .pg { margin: .5rem 0 0; padding-top: .35rem; border-top: 1px solid var(--rule-soft); text-align: center;
+        font: .7rem/1 var(--gothic); color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  /* A short spread (the tail of a day, or a sparse search) needs no folio. */
+  .spread:not(.full) .pg { display: none; }
+
+  .entry {
+    position: relative; break-inside: avoid; padding: .55rem .5rem .6rem 1.6rem; margin: 0 0 .3rem -.5rem;
+    border-radius: 3px; outline-offset: 0;
+    transition: background var(--step);
+  }
+  .entry:hover { background: color-mix(in srgb, var(--paper-2) 40%, var(--paper)); }
+  .entry.sel, .entry.sel:hover { background: var(--paper-2); }
+  .entry:focus-visible { outline: 2px solid var(--spot); }
+
+  /* The margin is the selection checkbox: an empty box on hover, on touch screens and while
+     a selection is open; a filled box when selected. Both glyphs share one cell. */
+  .mark { position: absolute; left: 0; top: .55rem; width: 1.55rem; height: 1.55rem; display: grid;
+          padding: .35rem; border: 0; border-radius: 3px; background: none; color: var(--spot); }
+  .mark:focus-visible { outline: 2px solid var(--spot); }
+  .mark svg { grid-area: 1 / 1; width: 100%; height: 100%; visibility: hidden; }
+  .entry:hover .ring, .entry:focus-within .ring, body.selecting .ring { visibility: visible; }
+  .entry.sel .box { visibility: visible; }
+  .entry.sel .ring { visibility: hidden; }
+  .mark .ring { fill: none; stroke: var(--ink-3); stroke-width: 1; }
+  .mark:hover .ring { stroke: var(--spot); }
+  .mark .box { fill: var(--spot); stroke: none; }
+  @media (hover: none) { .mark .ring { visibility: visible; } }
+
+  /* "Copied before" is a blue tick after the time. */
+  .done { display: none; color: var(--spot); stroke-width: 2.4; }
+  .entry.ticked .done { display: inline-block; }
+  .entry.just .done { animation: ink 90ms steps(2, jump-start); }
+  @keyframes ink { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+
+  .hwline { display: flex; align-items: flex-start; gap: .75rem; }
+  .hw { flex: 1; min-width: 0; margin: 0; font: 700 1.2rem/1.35 var(--serif);
+        overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+        overflow: hidden; cursor: copy; text-wrap: pretty; }
+  .entry:lang(ja) .hw, .entry:lang(ko) .hw { word-break: auto-phrase; }
+  .hw:hover { text-decoration: underline; text-decoration-color: var(--rule); text-underline-offset: .2em; }
+  .entry.code .hw, .entry.code .body { font-family: var(--mono); font-weight: 500; }
+  .entry.code .hw { font-size: 1rem; line-height: 1.5; }
+  .copy {
+    flex: none; display: inline-flex; align-items: center; gap: .3rem; margin-top: .15rem;
+    border: 1px solid var(--ink-3); background: var(--paper); color: var(--ink-2); border-radius: 3px;
+    padding: .18rem .5rem; font: 600 .72rem/1.2 var(--gothic);
+    visibility: hidden;  /* the headword itself copies; the chip shows where the pointer or focus is */
+  }
+  .entry:hover .copy, .entry:focus-within .copy, .entry.just .copy { visibility: visible; }
+  @media (hover: none) { .copy { visibility: visible; } }
+  .copy:hover { border-color: var(--spot); color: var(--spot); }
+  .entry.just .copy { border-color: var(--spot); background: var(--spot); color: var(--paper); }
+
+  .meta, .body, .more, figure { margin-left: 1rem; }  /* hanging indent under the headword */
+  .meta { display: flex; align-items: baseline; gap: .6rem; margin-top: .15rem; margin-bottom: 0;
+          font: .75rem/1.4 var(--gothic); color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .label {
+    border: 1px solid var(--ink-2); background: none; color: var(--ink-2); border-radius: 2px;
+    padding: 0 .35rem; font: 600 .7rem/1.45 var(--gothic); letter-spacing: .02em;
+  }
+  .label:hover { border-color: var(--spot); color: var(--spot); }
+  .label.none { border-style: dashed; color: var(--ink-3); border-color: var(--ink-3); font-weight: 400; }
+  .label-edit { width: 9rem; border: 1px solid var(--spot); border-radius: 2px; background: var(--paper);
+                padding: 0 .35rem; font: 600 .7rem/1.45 var(--gothic); outline: none; }
+  /* Labels: the reader's own tags, lighter than the category chip. The name filters, × removes. */
+  .tag { display: inline-flex; align-items: stretch; border-radius: 2px; background: var(--paper-2);
+         color: var(--ink-2); font: .7rem/1.45 var(--gothic); }
+  .tag button { border: 0; background: none; color: inherit; font: inherit; padding: 0 .1rem 0 .4rem; position: relative; }
+  .tag .tagx { padding: 0 .3rem 0 .15rem; color: var(--ink-3); }
+  .tag button::after { content: ""; position: absolute; inset: -4px 0; }
+  .tag .tagname:hover { color: var(--spot); text-decoration: underline; text-underline-offset: .15em; }
+  .tag .tagx:hover { color: var(--ink); }
+  .tag.on { background: var(--spot); color: var(--paper); }
+  .tag.on .tagx { color: inherit; }
+  .tagadd { border: 1px dashed var(--ink-3); background: none; color: var(--ink-3); border-radius: 2px;
+            padding: 0 .35rem; font: .7rem/1.45 var(--gothic); position: relative; visibility: hidden; }
+  .tagadd::after { content: ""; position: absolute; inset: -4px -3px; }
+  .entry:hover .tagadd, .entry:focus-within .tagadd { visibility: visible; }
+  @media (hover: none) { .tagadd { visibility: visible; } }
+  .tagadd:hover { border-color: var(--spot); color: var(--spot); }
+  .reading { margin: .05rem 0 .1rem 1rem; font: .8rem/1.4 var(--gothic); color: var(--ink-3);
+             overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .reading mark { font-weight: 600; }
+  .times { font-weight: 600; color: var(--ink-2); cursor: default; }
+  .figbtn { display: inline-flex; align-items: center; gap: .25rem; border: 0; background: none; padding: 0;
+            color: var(--ink-3); font: inherit; }
+  .figbtn:hover, .figbtn[aria-expanded="true"] { color: var(--spot); }
+
+  .body { margin-top: .25rem; margin-bottom: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink-2);
+          font: 1rem/1.55 var(--serif); }
+  .entry.code .body { font-size: .85rem; line-height: 1.55; }
+  .body.clamp { display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
+  .more { border: 0; background: none; padding: 0; margin-top: .2rem; color: var(--spot);
+          font: 600 .75rem/1.4 var(--gothic); }
+  .more:hover { text-decoration: underline; text-underline-offset: .2em; }
+  mark { background: none; color: var(--spot); font-weight: 700;
+         text-decoration: underline 2px; text-underline-offset: .18em; }
+
+  figure { margin-top: .5rem; margin-bottom: .1rem; margin-right: 0; }
+  figure img { display: block; max-width: 100%; height: auto; border: 1px solid var(--rule);
+               background: var(--paper-2); cursor: zoom-out; image-rendering: auto; }
+  figcaption { margin-top: .25rem; font: .72rem/1.3 var(--gothic); color: var(--ink-3); }
+
+  .tools { flex: none; display: flex; margin-top: .15rem; visibility: hidden; font: .72rem/1 var(--gothic); }
+  .meta .slot { flex: none; display: inline-flex; align-items: center; gap: .3rem; }
+  .meta .when { min-width: 4.8rem; }
+  .meta .rep { min-width: 1.4rem; }
+  .meta .fig { min-width: 2.4rem; }
+  .meta .chips { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: .3rem .45rem; }
+  @media (max-width: 760px) {  /* too narrow to share a line: chips get their own, under the fixed slots */
+    .meta { flex-wrap: wrap; row-gap: .3rem; }
+    .meta .chips { flex-basis: 100%; }
+  }
+  .entry:hover .tools, .entry:focus-within .tools, .entry.sel .tools { visibility: visible; }
+  .tools button { display: inline-flex; align-items: center; gap: .3rem; border: 0; background: none;
+                  padding: .2rem 0; color: var(--ink-3); font: inherit; }
+  .tools button:hover { color: var(--ink); }
+  .tools .del:hover { color: #b3261e; }
+  @media (prefers-color-scheme: dark) { .tools .del:hover { color: #ff8a80; } }
+
+  /* ---- states ------------------------------------------------------------- */
+  .notice { max-width: 34rem; margin: 6rem auto; }
+  .notice h2 { margin: 0 0 .5rem; font: 700 1.75rem/1.25 var(--serif); }
+  .notice p { margin: 0 0 .75rem; color: var(--ink-2); font-size: 1.05rem; }
+  .notice kbd {
+    font: 600 .75em/1 var(--gothic); border: 1px solid var(--rule); border-bottom-width: 2px;
+    border-radius: 3px; padding: .15em .4em; color: var(--ink); background: var(--paper);
+  }
+  .notice code { font: .9em var(--mono); }
+  .notice button { border: 1px solid var(--ink); background: none; border-radius: 3px; padding: .3rem .8rem;
+                   font: 600 .8rem/1.3 var(--gothic); }
+  .notice button:hover { border-color: var(--spot); color: var(--spot); }
+  .error { margin: 0 0 0 0; padding: .6rem 2.5rem; margin-right: var(--tab-w);
+           background: var(--ink); color: var(--paper); font: .85rem/1.4 var(--gothic); }
+  .error code { font-family: var(--mono); }
+  .error[hidden] { display: none; }
+  .loading { margin: 6rem auto; text-align: center; color: var(--ink-3); font-style: italic; }
+  #sentinel { height: 1px; }
+
+  /* ---- selection bar ------------------------------------------------------ */
+  .selbar {
+    position: fixed; left: 0; right: var(--tab-w); bottom: 0; z-index: 7;
+    display: flex; align-items: center; gap: .75rem; flex-wrap: wrap;
+    padding: .7rem 2.5rem; background: var(--ink); color: var(--on-ink);
+    font: .85rem/1.3 var(--gothic);
+  }
+  .selbar[hidden] { display: none; }
+  .selbar b { font-variant-numeric: tabular-nums; }
+  .selbar input { width: 11rem; border: 0; border-bottom: 1px solid currentColor; background: none;
+                  color: inherit; padding: .2rem 0; outline: none; }
+  .selbar input::placeholder { color: inherit; opacity: .6; }
+  .selbar button { border: 1px solid currentColor; background: none; color: inherit; border-radius: 3px;
+                   padding: .25rem .7rem; font-weight: 600; font-size: .8rem; }
+  .selbar button:hover:not(:disabled) { background: var(--on-ink); color: var(--ink); }
+  .selbar button:disabled { opacity: .45; cursor: default; }
+  .selbar button.ghost { border-color: transparent; font-weight: 400; }
+  .selbar .gap { flex: 1; }
+  .selbar :focus-visible { outline-color: var(--on-ink); }
+
+  .undo { left: 0; }
+  .undo::after { content: ""; position: absolute; left: 0; bottom: 0; width: 100%; height: 2px;
+                 background: var(--on-ink); opacity: .5; transform-origin: left; }
+  .undo.counting::after { animation: countdown 6s linear forwards; }
+  @keyframes countdown { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+  #selbar:not([hidden]) + .undo { bottom: 3.2rem; border-bottom: 1px solid var(--ink-3); }
+  .undo[hidden] { display: none; }
+
+  /* ---- narrow pages ------------------------------------------------------- */
+  @media (max-width: 1040px) {
+    .cols { grid-template-columns: minmax(0, 1fr); }
+    .col:first-child { padding-right: 0; }
+    .col + .col { padding-left: 0; border-left: 0; }
+  }
+  @media (max-width: 760px) {
+    :root { --tab-w: 0px; --head-h: 6.25rem; }
+    body { font-size: 15px; }
+    .head { grid-template-columns: 1fr auto; grid-template-rows: auto auto; gap: .35rem 1rem;
+            padding: .6rem 1rem 0; height: auto; min-height: var(--head-h); align-content: start; }
+    .look { grid-column: 1 / -1; grid-row: 2; }
+    .look kbd { display: none; }
+    .tabs { position: sticky; top: var(--head-h); width: auto; height: 2.6rem; flex-direction: row;
+            padding: 0 1rem; gap: 3px; overflow-x: auto; overflow-y: hidden; border-left: 0;
+            border-bottom: 1px solid var(--rule-soft); }
+    .tabs.more-after { mask-image: linear-gradient(to right, #000 calc(100% - 2.5rem), transparent); }
+    .tabs.more-before { mask-image: linear-gradient(to right, transparent, #000 2.5rem); }
+    .tabs.more-before.more-after {
+      mask-image: linear-gradient(to right, transparent, #000 2.5rem, #000 calc(100% - 2.5rem), transparent); }
+    .tab { writing-mode: horizontal-tb; flex: none; min-height: 0; max-height: none; max-width: 12rem; margin-top: .25rem;
+           border-radius: 4px 4px 0 0; padding: 0 .75rem; gap: .45rem; transform: translateY(.3rem); }
+    .tab:hover { transform: translateY(.15rem); }
+    .tab[aria-pressed="true"] { transform: none; }
+    .tabmore { height: auto; width: 1.9rem; margin-top: .25rem; }
+    .headend { gap: .9rem; }
+    .meta, .body, .more, figure { margin-left: 0; }
+    .help dl { grid-template-columns: 1fr; }
+    main { padding: 0 1rem 8rem; }
+    .day { padding-top: 1.75rem; }
+    .opener { flex-wrap: wrap; gap: .25rem .75rem; }
+    .opener .d { font-size: 2.1rem; }
+    .opener .c { display: none; }
+    .entry { padding-right: .25rem; }
+    .tools { visibility: visible; }
+    .selbar { padding: .7rem 1rem; }
+    .selbar input { width: 100%; order: 5; }
+    .error { padding: .6rem 1rem; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :root { --step: 0ms; }
+    .entry.just .done, .undo.counting::after { animation: none; }
   }
 </style>
 </head>
 <body>
-<div class="layout">
-  <aside id="cats"><h1>Screen OCR</h1></aside>
-  <main>
-    <div class="toolbar">
-      <input type="checkbox" id="all" title="Select all">
-      <input type="search" id="q" placeholder="Search text…">
-      <input type="text" id="bulkcat" list="catlist" placeholder="Category…" size="12">
-      <button id="bulkset" disabled>Set category</button>
-      <button id="bulkdel" class="danger" disabled>Delete</button>
-      <span class="count" id="count"></span>
-    </div>
-    <div id="list"></div>
-  </main>
+<a class="skip" href="#book" id="skip">Skip to entries</a>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-look" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="1.5"/><path d="M16 8V5.5A1.5 1.5 0 0 0 14.5 4h-9A1.5 1.5 0 0 0 4 5.5v9A1.5 1.5 0 0 0 5.5 16H8"/></symbol>
+  <symbol id="i-fig" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="1"/><path d="m3.5 16 5-5 4 4 2.5-2.5 5.5 5.5"/><circle cx="15.5" cy="9.5" r="1.3"/></symbol>
+  <symbol id="i-del" viewBox="0 0 24 24"><path d="M4 7h16M10 7V4.5h4V7M6.5 7l1 12.5h9l1-12.5"/></symbol>
+  <symbol id="i-sel" viewBox="0 0 24 24"><rect x="4.5" y="4.5" width="15" height="15" rx="1"/><path d="m8.5 12 2.5 2.5 4.5-5"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5.5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="18.5" cy="12" r="1.7"/></symbol>
+  <symbol id="i-pen" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4"/></symbol>
+  <symbol id="i-off" viewBox="0 0 24 24"><path d="M3.5 9.5V4.5h5l11 11-5 5-11-11z"/><path d="M4 20 20 4"/></symbol>
+  <symbol id="i-tick" viewBox="0 0 24 24"><path d="M3.5 13.5 9 19 20.5 5"/></symbol>
+</svg>
+
+<header class="head">
+  <h1 class="title">Screen OCR</h1>
+  <label class="look">
+    <svg class="i" aria-hidden="true"><use href="#i-look"/></svg>
+    <span class="sr">Search captures</span>
+    <input type="search" id="q" placeholder="Look up a word…" autocomplete="off" spellcheck="false">
+    <button class="filter" id="labelfilter" hidden></button>
+    <kbd aria-hidden="true">/</kbd>
+  </label>
+  <div class="headend">
+    <p class="folio" id="folio" role="status" aria-live="polite"></p>
+    <button class="helpbtn" id="helpbtn" aria-expanded="false" aria-controls="legend" title="Keyboard and help (?)">Help</button>
+  </div>
+</header>
+
+<nav class="tabs" id="tabs" aria-label="Categories"></nav>
+<div class="error" id="error" role="alert" hidden></div>
+<div class="error" id="hint" role="status" hidden></div>
+
+<main>
+  <div class="book" id="book"><p class="loading">Opening your dictionary…</p></div>
+  <div id="sentinel"></div>
+
+</main>
+
+<div class="selbar" id="selbar" hidden>
+  <span><b id="selcount">0</b> selected</span>
+  <button class="ghost" id="selall">Select all shown</button>
+  <button class="ghost" id="selnone">Clear</button>
+  <input type="text" id="bulkcat" list="catlist" placeholder="New category…" aria-label="Category for selected entries">
+  <button id="bulkset">Set category</button>
+  <input type="text" id="bulklabel" list="labellist" placeholder="Labels, comma-separated…" aria-label="Labels for selected entries, separated by commas">
+  <button id="bulklabeladd">Add label</button>
+  <button class="ghost" id="bulklabeldel">Remove label</button>
+  <span class="gap"></span>
+  <button id="bulkdel">Delete</button>
+</div>
+<div class="selbar undo" id="undo" role="status" hidden>
+  <span id="undomsg"></span>
+  <button id="undobtn">Undo</button>
 </div>
 <datalist id="catlist"></datalist>
+<datalist id="labellist"></datalist>
+
+<div class="panel catmenu" id="catmenu" hidden></div>
+
+<section class="panel help" id="legend" aria-labelledby="legend-h" hidden>
+  <h2 id="legend-h">How to use this dictionary</h2>
+  <dl>
+    <div><dt><kbd>/</kbd></dt><dd>Look up a word</dd></div>
+    <div><dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>Next / previous entry</dd></div>
+    <div><dt><kbd>Enter</kbd></dt><dd>Copy the entry</dd></div>
+    <div><dt><kbd>x</kbd></dt><dd>Select or unselect</dd></div>
+    <div><dt><kbd>Shift</kbd> <kbd>x</kbd></dt><dd>Select a range</dd></div>
+    <div><dt><kbd>e</kbd></dt><dd>Change its category</dd></div>
+    <div><dt><kbd>l</kbd></dt><dd>Add labels (commas separate them)</dd></div>
+    <div><dt><kbd>f</kbd></dt><dd>Show the screenshot</dd></div>
+    <div><dt><kbd>[</kbd> <kbd>]</kbd></dt><dd>Previous / next tab</dd></div>
+    <div><dt><kbd>m</kbd></dt><dd>Rename, select or remove this tab</dd></div>
+    <div><dt><kbd>Del</kbd></dt><dd>Delete entry or selection</dd></div>
+    <div><dt><kbd>u</kbd></dt><dd>Undo the last change</dd></div>
+    <div><dt><kbd>Esc</kbd></dt><dd>Clear selection, search or label filter</dd></div>
+  </dl>
+  <p>Click a headword to copy it; a blue tick after the time means you’ve copied it before. Click the box in the margin to select, Shift-click to select a range. Right-click a tab, or use its ⋯ button, to rename or remove a category. An entry can carry up to three labels of your own, like “lesson 18”; click one to see only those entries. Search looks in the text, categories and labels, and you can type Japanese, Chinese or Korean in Latin letters (“tokyo”, “mingtian”, “annyeong”). Everything stays on this computer.</p>
+</section>
 
 <script>
-const state = { category: null, q: "", captures: [], selected: new Set() };
+const PAGE = 120;
+const SPREAD = 10;
+const UNDO_MS = 6000;
+const API = 3;          // must match API_VERSION in web.py
+const MAX_LABELS = 3;   // and store.MAX_LABELS
 const $ = (id) => document.getElementById(id);
+const state = {
+  category: null, label: null, byId: new Map(), q: "", captures: [], labels: [], stale: false, categories: [], selected: new Set(), anchor: null,
+  shown: 0, signature: "", error: false, hanLang: "zh",
+};
 
+/* ---- storage (per-viewer ticks; optional) -------------------------------- */
+const ticks = (() => {
+  let set = new Set();
+  try { set = new Set(JSON.parse(localStorage.getItem("screen-ocr:ticks") || "[]")); } catch {}
+  return {
+    has: (id) => set.has(id),
+    add(id) {
+      set.add(id);
+      try { localStorage.setItem("screen-ocr:ticks", JSON.stringify([...set].slice(-5000))); } catch {}
+    },
+  };
+})();
+
+/* ---- api ------------------------------------------------------------------ */
 async function api(method, path, body) {
-  const res = await fetch(path, {
-    method,
-    headers: body ? { "Content-Type": "application/json" } : {},
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!res.ok) throw new Error((await res.json()).error || res.statusText);
+  let res;
+  try {
+    res = await fetch(path, {
+      method,
+      headers: body ? { "Content-Type": "application/json" } : {},
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    showError(true);
+    throw new Error("offline");
+  }
+  showError(false);
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
   return res.json();
 }
 
-async function load() {
+function showError(on) {
+  if (on === state.error) return;
+  state.error = on;
+  const el = $("error");
+  el.hidden = !on;
+  el.innerHTML = on
+    ? "Lost the connection to screen-ocr. Check that <code>screen-ocr --web</code> is still running, then reload this page."
+    : "";
+}
+
+// A failed save that isn't a lost connection (that one has its own banner).
+let problemTimer;
+function failed(err, what) {
+  if (err.message === "offline") return;
+  const el = $("error");
+  el.textContent = `Couldn’t ${what}: ${err.message}. Nothing was changed; try again.`;
+  el.hidden = false;
+  clearTimeout(problemTimer);
+  problemTimer = setTimeout(() => { if (!state.error && !state.stale) el.hidden = true; }, 8000);
+}
+
+// Something that didn't happen, without blaming the connection.
+function note(message) {
+  const el = $("error");
+  el.textContent = message;
+  el.hidden = false;
+  clearTimeout(problemTimer);
+  problemTimer = setTimeout(() => { if (!state.error && !state.stale) el.hidden = true; }, 8000);
+}
+
+async function load({ keepScroll = false } = {}) {
   const params = new URLSearchParams();
   if (state.q) params.set("q", state.q);
   if (state.category !== null) params.set("category", state.category);
-  const data = await api("GET", "/api/captures?" + params);
-  state.captures = data.captures;
+  if (state.label !== null) params.set("label", state.label);
+  let data;
+  try { data = withoutPending(await api("GET", "/api/captures?" + params)); } catch { return; }
+  // The page is read from disk on every load but the server's code isn't: say so
+  // rather than failing later on an endpoint the old process doesn't have.
+  state.stale = data.api !== API;
+  if (state.stale) {
+    $("error").hidden = false;
+    $("error").innerHTML = "This page is newer than the running server. Stop <code>screen-ocr --web</code> (Ctrl+C) and start it again; until then, changes can’t be saved.";
+  }
+
+  // Without pykakasi/pypinyin only kana and hangul get a reading; say so instead of failing quietly.
+  const missing = state.stale ? [] : data.missing || [];
+  $("hint").hidden = !missing.length;
+  if (missing.length) {
+    $("hint").innerHTML = `Kanji and Chinese have no reading in Latin letters because this Python doesn’t have ${missing.map((m) => `<code>${m}</code>`).join(" or ")}. Run <code>pip install ${missing.join(" ")}</code> where screen-ocr is installed, then restart <code>screen-ocr --web</code>.`;
+  }
+
+  const sig = JSON.stringify([state.q, state.category, state.label, data.captures.length,
+    data.captures.slice(0, 3).map((c) => [c.id, c.category, c.labels]), data.categories, data.labels]);
+  if (keepScroll && sig === state.signature) return;
+  state.signature = sig;
+
+  const focusId = document.activeElement?.closest?.(".entry")?.dataset.id;
+  state.captures = collapse(data.captures);
+  state.byId = new Map(state.captures.map((c) => [c.id, c]));
+  state.labels = data.labels || [];
+  if (state.label !== null && !state.labels.some((l) => l.label === state.label)) state.label = null;
+  // "uncategorized" is filed at the back of the book, not the front
+  state.categories = data.categories.filter((c) => c.category).concat(data.categories.filter((c) => !c.category));
+  if (state.category !== null && !state.categories.some((c) => c.category === state.category)) state.category = null;
   const ids = new Set(data.captures.map((c) => c.id));
   state.selected = new Set([...state.selected].filter((id) => ids.has(id)));
-  renderCategories(data.categories);
-  renderList();
+  // Guess from the whole history only, so a search doesn't flip how kanji are read
+  if (!state.q && state.category === null && state.label === null) state.hanLang = guessHanLang(data.captures);
+  renderTabs();
+  renderFilter();
+  renderBook(keepScroll ? Math.max(state.shown, PAGE) : PAGE);
+  renderSelbar();
+  if (focusId) document.querySelector(`.entry[data-id="${focusId}"]`)?.focus({ preventScroll: true });
 }
 
-function renderCategories(cats) {
-  const aside = $("cats");
-  aside.querySelectorAll("a").forEach((a) => a.remove());
-  const total = cats.reduce((n, c) => n + c.n, 0);
-  const link = (label, value, n) => {
-    const a = document.createElement("a");
-    a.href = "#";
-    a.className = state.category === value ? "active" : "";
-    a.append(label);
-    const s = document.createElement("span");
-    s.textContent = n;
-    a.append(s);
-    a.onclick = (e) => { e.preventDefault(); state.category = value; load(); };
-    aside.append(a);
-  };
-  link("All", null, total);
-  cats.forEach((c) => link(c.category || "(none)", c.category, c.n));
+// The same text captured again is one entry: the newest copy stands for the rest
+// (its time, category, labels and screenshot), and edits apply to every copy.
+function collapse(captures) {
+  const byText = new Map();
+  const out = [];
+  for (const c of captures) {  // newest first
+    const rep = byText.get(c.text);
+    if (rep) { rep.copies.push(c); continue; }
+    const fresh = { ...c, labels: c.labels || [], copies: [c] };
+    byText.set(c.text, fresh);
+    out.push(fresh);
+  }
+  return out;
+}
+const copiesOf = (ids) => ids.flatMap((id) => state.byId.get(id)?.copies ?? []);
 
-  const dl = $("catlist");
-  dl.replaceChildren(...cats.filter((c) => c.category).map((c) => {
+/* ---- tabs ----------------------------------------------------------------- */
+const catName = (value) => value === null ? "All" : value || "uncategorized";
+
+function renderTabs() {
+  const nav = $("tabs");
+  const focus = nav.contains(document.activeElement) ? document.activeElement.className : "";
+  const total = state.categories.reduce((n, c) => n + c.n, 0);
+  const tabs = [{ value: null, n: total }].concat(state.categories.map((c) => ({ value: c.category, n: c.n })));
+  const items = [];
+  for (const t of tabs) {
+    const label = catName(t.value);
+    const on = state.category === t.value;
+    const b = document.createElement("button");
+    b.className = "tab" + (t.value === "" ? " none" : "");
+    b.setAttribute("aria-pressed", String(on));
+    b.innerHTML = `<span></span><span class="n"></span>`;
+    b.firstChild.textContent = label;
+    b.lastChild.textContent = t.n.toLocaleString();
+    b.title = label;
+    b.setAttribute("aria-label", `${label}, ${t.n} entries`);
+    b.onclick = () => setCategory(t.value);
+    if (t.value !== null) {
+      b.oncontextmenu = (e) => {
+        e.preventDefault();
+        if (state.category !== t.value) { menuAfterLoad = true; setCategory(t.value); } else openCatMenu();
+      };
+    }
+    items.push(b);
+    if (on && t.value !== null) {
+      const more = document.createElement("button");
+      more.className = "tabmore";
+      more.id = "tabmore";
+      more.title = "Rename, select or remove (m)";
+      more.setAttribute("aria-label", `${label}: category actions`);
+      more.setAttribute("aria-haspopup", "menu");
+      more.setAttribute("aria-expanded", "false");
+      more.innerHTML = `<svg class="i" aria-hidden="true"><use href="#i-more"/></svg>`;
+      more.onclick = () => ($("catmenu").hidden ? openCatMenu() : closeCatMenu());
+      items.push(more);
+    }
+  }
+  nav.replaceChildren(...items);
+  // Re-rendering replaces the buttons; keep keyboard focus on the chosen tab.
+  if (focus) (focus === "tabmore" && $("tabmore") || nav.querySelector('.tab[aria-pressed="true"]'))?.focus();
+  requestAnimationFrame(() => {
+    tabCue();
+    nav.querySelector('.tab[aria-pressed="true"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  });
+  $("catlist").replaceChildren(...state.categories.filter((c) => c.category).map((c) => {
     const o = document.createElement("option");
     o.value = c.category;
     return o;
   }));
+  if (menuAfterLoad) { menuAfterLoad = false; openCatMenu(); }
+}
+let menuAfterLoad = false;
+
+function tabCue() {
+  const nav = $("tabs");
+  const vertical = getComputedStyle(nav).flexDirection === "column";
+  const pos = vertical ? nav.scrollTop : nav.scrollLeft;
+  const room = vertical ? nav.scrollHeight - nav.clientHeight : nav.scrollWidth - nav.clientWidth;
+  nav.classList.toggle("more-before", pos > 2);
+  nav.classList.toggle("more-after", room - pos > 2);
+}
+$("tabs").addEventListener("scroll", () => {
+  tabCue();
+  if (!$("catmenu").hidden && $("tabmore")) place($("catmenu"), $("tabmore"));
+}, { passive: true });
+// Follow the opener rather than closing: on phones the on-screen keyboard resizes the window.
+window.addEventListener("resize", () => {
+  tabCue();
+  if (!$("catmenu").hidden && $("tabmore")) place($("catmenu"), $("tabmore"));
+  if (!$("legend").hidden) place($("legend"), $("helpbtn"));
+});
+
+function setCategory(value) {
+  if (state.category === value) return;
+  closeCatMenu(false);
+  state.category = value;
+  window.scrollTo(0, 0);
+  load();
 }
 
-function renderList() {
-  const list = $("list");
-  list.replaceChildren();
-  if (!state.captures.length) {
-    list.innerHTML = '<div class="empty">No captures yet. Press your hotkey and drag a box.</div>';
-  }
-  for (const c of state.captures) list.append(card(c));
-  $("count").textContent = `${state.captures.length} shown`;
-  $("all").checked = state.captures.length > 0 && state.selected.size === state.captures.length;
-  $("bulkdel").disabled = $("bulkset").disabled = state.selected.size === 0;
-  $("bulkdel").textContent = state.selected.size ? `Delete ${state.selected.size}` : "Delete";
+function stepTab(dir) {
+  const values = [null, ...state.categories.map((c) => c.category)];
+  const i = values.indexOf(state.category);
+  setCategory(values[(i + dir + values.length) % values.length]);
 }
 
-function card(c) {
-  const el = document.createElement("div");
-  el.className = "card" + (state.selected.has(c.id) ? " selected" : "");
+/* ---- panels: category menu and help ---------------------------------------- */
+function place(panel, anchor) {
+  const r = anchor.getBoundingClientRect();
+  const w = panel.offsetWidth, h = panel.offsetHeight, gap = 8;
+  const vertical = getComputedStyle($("tabs")).flexDirection === "column";
+  let left, top;
+  if (anchor.closest("#tabs") && vertical) { left = r.left - w - gap; top = r.top; }
+  else { left = r.right - w; top = r.bottom + gap; }
+  panel.style.left = `${Math.max(8, Math.min(left, innerWidth - w - 8))}px`;
+  panel.style.top = `${Math.max(8, Math.min(top, innerHeight - h - 8))}px`;
+}
 
-  const check = document.createElement("input");
-  check.type = "checkbox";
-  check.checked = state.selected.has(c.id);
-  check.onchange = () => {
-    check.checked ? state.selected.add(c.id) : state.selected.delete(c.id);
-    renderList();
+function outside(panel, opener, close) {
+  const off = (e) => {
+    if (panel.hidden) return document.removeEventListener("pointerdown", off, true);
+    if (!panel.contains(e.target) && !opener()?.contains(e.target)) close(false);
   };
+  setTimeout(() => document.addEventListener("pointerdown", off, true));
+}
 
-  const header = document.createElement("header");
-  const time = document.createElement("time");
-  time.textContent = new Date(c.created_at * 1000).toLocaleString();
+function menuItem(iconName, text, run, danger) {
+  const li = document.createElement("li");
+  const b = document.createElement("button");
+  b.setAttribute("role", "menuitem");
+  if (danger) b.className = "danger";
+  b.innerHTML = `${icon(iconName)}<span></span>`;
+  b.lastChild.textContent = text;
+  b.onclick = run;
+  li.append(b);
+  return li;
+}
 
-  const cat = document.createElement("input");
-  cat.type = "text";
-  cat.className = "cat";
-  cat.value = c.category;
-  cat.placeholder = "category";
-  cat.setAttribute("list", "catlist");
-  cat.onchange = async () => {
-    await api("PATCH", `/api/captures/${c.id}`, { category: cat.value });
+function openCatMenu() {
+  const value = state.category, anchor = $("tabmore");
+  if (value === null || !anchor) return;
+  const menu = $("catmenu");
+  const n = state.categories.find((c) => c.category === value)?.n || 0;
+  const shown = state.captures.length;
+  menu.replaceChildren();
+  const h = document.createElement("h2");
+  h.innerHTML = `<span></span><small></small>`;
+  h.firstChild.textContent = catName(value);
+  h.lastChild.textContent = `${n.toLocaleString()} ${n === 1 ? "entry" : "entries"}`;
+  const ul = document.createElement("ul");
+  ul.setAttribute("role", "menu");
+  ul.setAttribute("aria-label", `${catName(value)} actions`);
+  ul.append(menuItem("sel", state.q ? `Select the ${shown.toLocaleString()} found` : `Select all ${shown.toLocaleString()}`,
+    () => { closeCatMenu(); setSelection(state.captures.map((c) => c.id)); }));
+  if (value) {
+    ul.append(menuItem("pen", "Rename…", () => renameForm(value)));
+    ul.append(menuItem("off", "Remove category", () => { closeCatMenu(); renameCategory(value, ""); }, true));
+  }
+  menu.append(h, ul);
+  menu.hidden = false;
+  anchor.setAttribute("aria-expanded", "true");
+  place(menu, anchor);
+  menuKeys(menu);
+  ul.querySelector("button").focus();
+  outside(menu, () => $("tabmore"), closeCatMenu);
+}
+
+function menuKeys(menu) {
+  menu.onkeydown = (e) => {
+    e.stopPropagation();
+    if (e.key === "Escape") { e.preventDefault(); closeCatMenu(); return; }
+    if (e.target.matches("input")) return;
+    const items = [...menu.querySelectorAll('[role="menuitem"]')];
+    const i = items.indexOf(document.activeElement);
+    if (e.key === "ArrowDown" || e.key === "j") { e.preventDefault(); items[(i + 1) % items.length]?.focus(); }
+    if (e.key === "ArrowUp" || e.key === "k") { e.preventDefault(); items[(i - 1 + items.length) % items.length]?.focus(); }
+  };
+}
+
+function renameForm(value) {
+  const menu = $("catmenu");
+  menu.querySelector("ul").remove();
+  const form = document.createElement("form");
+  form.innerHTML = `<label for="rename">New name</label><input id="rename" autocomplete="off" spellcheck="false" list="catlist">
+    <div class="row"><button type="button">Cancel</button><button type="submit">Rename</button></div>`;
+  const input = form.querySelector("input"), save = form.querySelector('[type="submit"]');
+  input.value = value;
+  const check = () => { save.disabled = !input.value.trim() || input.value.trim() === value; };
+  input.oninput = check;
+  check();
+  form.querySelector('[type="button"]').onclick = () => closeCatMenu();
+  form.onsubmit = (e) => { e.preventDefault(); if (!save.disabled) { closeCatMenu(); renameCategory(value, input.value.trim()); } };
+  menu.append(form);
+  place(menu, $("tabmore"));
+  input.focus();
+  input.select();
+}
+
+function closeCatMenu(refocus = true) {
+  const menu = $("catmenu");
+  if (menu.hidden) return;
+  menu.hidden = true;
+  $("tabmore")?.setAttribute("aria-expanded", "false");
+  if (refocus) $("tabmore")?.focus();
+}
+
+async function renameCategory(from, to) {
+  const n = state.categories.find((c) => c.category === from)?.n || 0;
+  const merged = to && state.categories.some((c) => c.category === to);
+  let ids;
+  try { ({ ids } = await api("POST", "/api/categories/rename", { from, to })); } catch (err) {
+    return failed(err, to ? "rename the category" : "remove the category");
+  }
+  const count = `${n.toLocaleString()} ${n === 1 ? "entry" : "entries"}`;
+  offerUndo(!to ? `Removed “${from}”. Its ${count} ${n === 1 ? "is" : "are"} now uncategorized.`
+    : merged ? `Moved ${count} from “${from}” into “${to}”.` : `Renamed “${from}” to “${to}”.`,
+  async () => {
+    try { await api("POST", "/api/captures/category", { changes: ids.map((id) => ({ id, category: from })) }); }
+    catch (err) { return failed(err, "undo that"); }
+    state.category = from;
+    state.signature = "";
     load();
-  };
+  });
+  state.category = to || null;
+  state.signature = "";
+  load();
+}
 
-  const actions = document.createElement("div");
-  actions.className = "actions";
-  const copy = document.createElement("button");
-  copy.textContent = "Copy";
-  copy.onclick = async () => {
-    await navigator.clipboard.writeText(c.text);
-    copy.textContent = "Copied";
-    setTimeout(() => (copy.textContent = "Copy"), 1200);
-  };
-  const del = document.createElement("button");
-  del.className = "danger";
-  del.textContent = "Delete";
-  del.onclick = () => remove([c.id]);
-  actions.append(copy, del);
-  header.append(time, cat, actions);
+function openHelp() {
+  const panel = $("legend");
+  panel.hidden = false;
+  $("helpbtn").setAttribute("aria-expanded", "true");
+  place(panel, $("helpbtn"));
+  panel.tabIndex = -1;
+  panel.focus();
+  panel.onkeydown = (e) => { if (e.key === "Escape" || e.key === "?") { e.preventDefault(); e.stopPropagation(); closeHelp(); } };
+  outside(panel, () => $("helpbtn"), closeHelp);
+}
 
-  const pre = document.createElement("pre");
-  pre.textContent = c.text;
+function closeHelp(refocus = true) {
+  if ($("legend").hidden) return;
+  $("legend").hidden = true;
+  $("helpbtn").setAttribute("aria-expanded", "false");
+  if (refocus) $("helpbtn").focus();
+}
+$("helpbtn").onclick = () => ($("legend").hidden ? openHelp() : closeHelp());
 
-  el.append(check, header, document.createElement("span"), pre);
-  if (c.image) {
-    const img = document.createElement("img");
-    img.src = `/images/${c.image}`;
-    img.loading = "lazy";
-    img.alt = "capture";
-    img.onclick = () => img.classList.toggle("big");
-    el.append(document.createElement("span"), img);
+/* ---- the book -------------------------------------------------------------- */
+const dayKey = (t) => { const d = new Date(t * 1000); return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`; };
+
+function relDay(t) {
+  const d = new Date(t * 1000); d.setHours(0, 0, 0, 0);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const diff = Math.round((today - d) / 86400000);
+  return diff === 0 ? "Today" : diff === 1 ? "Yesterday" : "";
+}
+
+function renderBook(count) {
+  const book = $("book");
+  book.replaceChildren();
+  state.shown = 0;
+  state.lastDay = null;
+  state.lastCols = null;
+  state.page = 0;
+  state.dayCounts = new Map();
+  for (const c of state.captures) {
+    const k = dayKey(c.created_at);
+    state.dayCounts.set(k, (state.dayCounts.get(k) || 0) + 1);
   }
+  if (!state.captures.length) return book.append(emptyState());
+  appendEntries(count);
+}
+
+function appendEntries(count) {
+  const end = Math.min(state.captures.length, state.shown + count);
+  const book = $("book");
+  const touched = new Set();
+  for (let i = state.shown; i < end; i++) {
+    const c = state.captures[i];
+    const key = dayKey(c.created_at);
+    if (key !== state.lastDay) {
+      state.lastDay = key;
+      const sec = document.createElement("section");
+      const small = (state.dayCounts.get(key) || 0) <= 3;
+      sec.className = "day" + (small ? " small" : "");
+      sec.append(opener(c.created_at, key, small));
+      book.append(sec);
+      state.lastSection = sec;
+      state.lastCols = null;
+    }
+    if (!state.lastCols || state.lastCols.querySelectorAll(".entry").length >= SPREAD) newSpread();
+    state.lastCols.firstChild.append(entry(c));
+    touched.add(state.lastCols);
+  }
+  state.shown = end;
+  touched.forEach(balance);
+}
+
+// Split a spread's entries between its two columns by height, keeping reading order
+// (down the left, then down the right). Done once here, never on later growth.
+function balance(cols) {
+  const [left, right] = cols.children;
+  const entries = [...cols.querySelectorAll(".entry")];
+  const focused = document.activeElement;  // moving a node drops its focus
+  left.append(...entries);
+  const heights = entries.map((el) => el.offsetHeight);
+  const total = heights.reduce((a, h) => a + h, 0);
+  let split = entries.length, best = Infinity, sum = 0;
+  for (let k = 1; k <= entries.length; k++) {
+    sum += heights[k - 1];
+    const tallest = Math.max(sum, total - sum);
+    if (tallest < best) { best = tallest; split = k; }
+  }
+  right.append(...entries.slice(split));
+  cols.parentNode.classList.toggle("full", entries.length >= SPREAD);
+  if (focused && cols.contains(focused)) focused.focus({ preventScroll: true });
+}
+// Crossing between one and two columns changes every entry's height: split again.
+matchMedia("(max-width: 1040px)").addEventListener("change", () => document.querySelectorAll(".cols").forEach(balance));
+
+// A day is cut into page-sized spreads so the two columns never run longer than a screen.
+function newSpread() {
+  const spread = document.createElement("div");
+  spread.className = "spread";
+  state.lastCols = document.createElement("div");
+  state.lastCols.className = "cols";
+  for (let i = 0; i < 2; i++) {
+    const col = document.createElement("div");
+    col.className = "col";
+    state.lastCols.append(col);
+  }
+  const pg = document.createElement("p");
+  pg.className = "pg";
+  pg.textContent = ++state.page;
+  spread.append(state.lastCols, pg);
+  state.lastSection.append(spread);
+}
+
+function opener(t, key, compact) {
+  const d = new Date(t * 1000);
+  const h = document.createElement("h2");
+  h.className = "opener" + (compact ? " compact" : "");
+  const n = state.dayCounts.get(key) || 0;
+  const rel = relDay(t);
+  h.innerHTML = `<span class="d"></span><span class="m"></span><span class="rel"></span><span class="c"></span>`;
+  h.querySelector(".d").textContent = d.getDate();
+  h.querySelector(".m").textContent = d.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  h.querySelector(".rel").textContent = [d.toLocaleDateString(undefined, { weekday: "long" }), rel].filter(Boolean).join(" · ");
+  h.querySelector(".c").textContent = `${n} ${n === 1 ? "entry" : "entries"}`;
+  return h;
+}
+
+function emptyState() {
+  const div = document.createElement("div");
+  div.className = "notice";
+  if (state.q || state.category !== null || state.label !== null) {
+    const narrowed = state.category !== null || state.label !== null;
+    const where = (state.category !== null ? ` under “${catName(state.category)}”` : "")
+      + (state.label !== null ? ` labelled “${state.label}”` : "");
+    div.innerHTML = `<h2></h2><p></p>`;
+    div.querySelector("h2").textContent = state.q ? `No entry for “${state.q}”` : "This tab is empty";
+    div.querySelector("p").textContent = state.q
+      ? `Nothing in your captures${where} contains that text${narrowed ? "" : ", its category or its labels"}. Try fewer characters${narrowed ? ", or look everywhere" : ""}.`
+      : "Nothing is filed here any more.";
+    const b = document.createElement("button");
+    b.textContent = state.q && narrowed ? "Look everywhere" : "Show every entry";
+    b.onclick = () => {
+      if (!(state.q && narrowed)) { state.q = ""; $("q").value = ""; }
+      state.category = null;
+      state.label = null;
+      load();
+    };
+    div.append(b);
+  } else {
+    div.innerHTML = `<h2>Your dictionary is empty</h2>
+      <p>Press <kbd>Ctrl</kbd> <kbd>Alt</kbd> <kbd>O</kbd> (or the hotkey you set), drag a box over any text on screen,
+      and it lands in your clipboard and here.</p>
+      <p>On Wayland, bind <code>screen-ocr --once</code> to a shortcut instead.</p>`;
+  }
+  return div;
+}
+
+function splitText(text) {
+  const lines = text.replace(/\s+$/, "").split("\n");
+  const first = lines.findIndex((l) => l.trim());
+  if (first < 0) return { head: "(blank)", rest: "" };
+  return { head: lines[first].trim(), rest: lines.slice(first + 1).join("\n").replace(/^\s*\n/, "") };
+}
+
+const KANA = /[぀-ヿｦ-ﾟ]/, HANGUL = /[가-힯]/, HAN = /[㐀-䶿一-鿿]/;
+
+// Kanji-only lines can't say whether they're Japanese or Chinese; side with whatever
+// the rest of the history is mostly written in, so they get the right glyph forms.
+function guessHanLang(captures) {
+  let kana = 0, hanOnly = 0;
+  for (const text of new Set(captures.map((c) => c.text))) {  // a repeated capture counts once
+    if (KANA.test(text)) kana++;
+    else if (HAN.test(text) && !HANGUL.test(text)) hanOnly++;
+  }
+  return kana >= hanOnly ? "ja" : "zh";
+}
+
+function langOf(text) {
+  if (KANA.test(text)) return "ja";
+  if (HANGUL.test(text)) return "ko";
+  if (HAN.test(text)) return state.hanLang;
+  return "";
+}
+
+// Same folding as the server's search: width, katakana/hiragana and case all match.
+const foldStr = (s) => s.normalize("NFKC").toLowerCase()
+  .replace(/[ァ-ヶ]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0x60));
+
+function highlight(el, text) {
+  const q = foldStr(state.q);
+  if (!q) { el.textContent = text; return; }
+  // Fold one character at a time (keeping half-width voicing marks with their kana)
+  // and remember where each folded character came from, so hits map back to the original.
+  let folded = "";
+  const from = [];
+  for (let i = 0; i < text.length;) {
+    let j = i + (text.codePointAt(i) > 0xffff ? 2 : 1);
+    while (j < text.length && /[ﾞﾟ゙゚]/.test(text[j])) j++;
+    const f = foldStr(text.slice(i, j));
+    for (let k = 0; k < f.length; k++) from.push(i);
+    folded += f;
+    i = j;
+  }
+  const startOf = (k) => (k < from.length ? from[k] : text.length);
+  let at = 0, k;
+  while ((k = folded.indexOf(q, at)) !== -1) {
+    let e = k + q.length;
+    while (e < from.length && from[e] === from[e - 1]) e++;  // finish a character that folded to several
+    const a = startOf(k), b = startOf(e);
+    el.append(text.slice(startOf(at), a));
+    const m = document.createElement("mark");
+    m.textContent = text.slice(a, b);
+    el.append(m);
+    at = e;
+  }
+  el.append(text.slice(startOf(at)));
+}
+
+// Same as romanize.key on the server: letters and digits only, long vowels written once
+// (toukyou = tokyo), m before b/p read as n. `from` maps each key character back into `s`.
+function romanKey(s) {
+  const t = s.normalize("NFKC").toLowerCase();
+  const kept = [];
+  for (let i = 0; i < t.length; i++) if (/[a-z0-9]/.test(t[i])) kept.push(i);
+  let key = "";
+  const from = [];
+  kept.forEach((i, n) => {
+    const ch = t[i], prev = key[key.length - 1];
+    if ((ch === "u" && prev === "o") || ("aiueo".includes(ch) && ch === prev)) return;
+    key += ch === "m" && /[bp]/.test(t[kept[n + 1]] || "") ? "n" : ch;
+    from.push(i);
+  });
+  return { key, from };
+}
+
+// The reading in Latin letters under the headword, one text line after another. A kanji-only
+// line is stored as "japanese<TAB>chinese"; show the one that fits the entry's language.
+// A Latin-letter search that hits the reading gets marked, so it's clear why it's here.
+function readingFor(c) {
+  if (!c.roman) return null;
+  const lang = langOf(c.text), pick = lang === "zh" ? 1 : 0;
+  const r = c.roman.split("\n").map((line) => { const p = line.split("\t"); return p[pick] || p[0]; }).join(" · ");
+  const p = document.createElement("p");
+  p.className = "reading";
+  p.lang = (lang || "und") + "-Latn";
+  p.title = r;
+  const q = foldStr(state.q);
+  const qk = /[a-z]/.test(q) ? romanKey(q).key : "";
+  const { key, from } = romanKey(r);
+  const k = qk.length < 2 ? -1 : key.indexOf(qk);  // as on the server: one letter would match nearly every reading
+  if (k < 0) { p.textContent = r; return p; }
+  const a = from[k];
+  let b = from[k + qk.length - 1] + 1;
+  while (b < r.length && /[aeiou]/.test(r[b]) && !from.includes(b)) b++;  // a long vowel the key folded away
+  const m = document.createElement("mark");
+  m.textContent = r.slice(a, b);
+  p.append(r.slice(0, a), m, r.slice(b));
+  return p;
+}
+
+// Show percent-encoded links the way people read them (心 rather than %E5%BF%83). Copy keeps the original.
+function readable(head) {
+  if (!/^https?:\/\/\S*%[0-9a-f]{2}/i.test(head)) return head;
+  try { return decodeURI(head); } catch { return head; }
+}
+
+const icon = (name) => `<svg class="i" aria-hidden="true"><use href="#i-${name}"/></svg>`;
+
+function entry(c) {
+  const { head, rest } = splitText(c.text);
+  const short = head.length > 40 ? head.slice(0, 39) + "…" : head;
+  const el = document.createElement("article");
+  el.className = "entry" + (c.category === "code" ? " code" : "")
+    + (state.selected.has(c.id) ? " sel" : "") + (c.copies.some((x) => ticks.has(x.id)) ? " ticked" : "");
+  el.tabIndex = 0;
+  el.dataset.id = c.id;
+  const lang = langOf(c.text);
+  if (lang) el.lang = lang;
+  el.setAttribute("aria-labelledby", `hw-${c.id}`);
+  el.setAttribute("aria-describedby", `meta-${c.id}`);
+
+  el.innerHTML = `
+    <button class="mark" aria-pressed="${state.selected.has(c.id)}" title="Select (x) · Shift-click for a range"><svg class="ring" viewBox="0 0 10 10" aria-hidden="true"><rect x=".5" y=".5" width="9" height="9" rx="1"/></svg><svg class="box" viewBox="0 0 10 10" aria-hidden="true"><rect width="10" height="10" rx="1"/></svg></button>
+    <div class="hwline"><h3 class="hw" id="hw-${c.id}" title="Click to copy"></h3>
+      <button class="copy" title="Copy (Enter)">${icon("copy")}<span>Copy</span></button>
+      <div class="tools"><button class="del">${icon("del")}<span>Delete</span></button></div></div>
+    <p class="meta" id="meta-${c.id}"><span class="slot when"></span><span class="slot rep"></span><span class="slot fig"></span><span class="chips"></span></p>`;
+  highlight(el.querySelector(".hw"), readable(head));
+  const reading = readingFor(c);
+  if (reading) el.querySelector(".hwline").after(reading);
+  el.querySelector(".mark").setAttribute("aria-label", `Select “${short}”`);
+  el.querySelector(".copy").setAttribute("aria-label", `Copy “${short}”`);
+  el.querySelector(".del").setAttribute("aria-label", `Delete “${short}”`);
+
+  const meta = el.querySelector(".meta");
+  // Fixed slots first, then the chips: a long category or label never moves anything else.
+  meta.querySelector(".chips").append(labelButton(c), ...labelChips(c));
+  const time = document.createElement("time");
+  const d = new Date(c.created_at * 1000);
+  time.dateTime = d.toISOString();
+  time.textContent = d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  meta.querySelector(".when").append(time);
+  if (c.copies.length > 1) {
+    const n = c.copies.length;
+    const times = document.createElement("span");
+    times.className = "times";
+    times.innerHTML = `<span aria-hidden="true">×${n}</span><span class="sr">, captured ${n} times</span>`;
+    const when = c.copies.slice(0, 6).map((x) => new Date(x.created_at * 1000)
+      .toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }));
+    times.title = `Captured ${n} times: ${when.join(", ")}${n > 6 ? ", …" : ""}`;
+    meta.querySelector(".rep").append(times);
+  }
+  meta.querySelector(".when").insertAdjacentHTML("beforeend",
+    `<svg class="i done" viewBox="0 0 24 24" role="img" aria-label="copied before"><title>Copied before</title><use href="#i-tick"/></svg>`);
+
+  if (rest) {
+    const p = document.createElement("p");
+    p.className = "body";
+    highlight(p, rest);
+    meta.after(p);
+    const lines = rest.split("\n").length;
+    if (lines > 5 || rest.length > 360) {
+      p.classList.add("clamp");
+      const more = document.createElement("button");
+      more.className = "more";
+      more.textContent = "more";
+      more.setAttribute("aria-expanded", "false");
+      more.onclick = (e) => {
+        e.stopPropagation();
+        const open = p.classList.toggle("clamp");
+        more.textContent = open ? "more" : "less";
+        more.setAttribute("aria-expanded", String(!open));
+      };
+      p.after(more);
+    }
+  }
+
+  if (c.image) {
+    const fb = document.createElement("button");
+    fb.className = "figbtn";
+    fb.setAttribute("aria-expanded", "false");
+    fb.innerHTML = `${icon("fig")}<span>fig.</span>`;
+    fb.title = "Show the screenshot (f)";
+    fb.onclick = (e) => { e.stopPropagation(); toggleFigure(el, c); };
+    meta.querySelector(".fig").append(fb);
+  }
+
+  el.querySelector(".hw").onclick = () => copyEntry(el, c);
+  el.querySelector(".copy").onclick = (e) => { e.stopPropagation(); copyEntry(el, c); };
+  el.querySelector(".mark").onclick = (e) => { e.stopPropagation(); toggleSelect(el, e.shiftKey); };
+  el.querySelector(".del").onclick = (e) => { e.stopPropagation(); remove([c.id]); };
+  el._capture = c;
   return el;
 }
 
-async function remove(ids) {
-  const what = ids.length === 1 ? "this capture" : `${ids.length} captures`;
-  if (!confirm(`Delete ${what}? This removes the text and screenshot for good.`)) return;
-  await api("POST", "/api/captures/delete", { ids });
-  ids.forEach((id) => state.selected.delete(id));
+function labelButton(c) {
+  const b = document.createElement("button");
+  b.className = "label" + (c.category ? "" : " none");
+  if (c.category) highlight(b, c.category); else b.textContent = "uncategorized";
+  b.title = "Change category (e)";
+  b.onclick = (e) => { e.stopPropagation(); editLabel(b, c); };
+  return b;
+}
+
+function editLabel(btn, c) {
+  const input = document.createElement("input");
+  input.className = "label-edit";
+  input.value = c.category;
+  input.setAttribute("list", "catlist");
+  input.setAttribute("aria-label", "Category");
+  input.placeholder = "category";
+  btn.replaceWith(input);
+  input.focus();
+  input.select();
+  let done = false;
+  const finish = async (save) => {
+    if (done) return;
+    done = true;
+    const value = input.value.trim();
+    const article = input.closest(".entry");
+    const restore = () => { input.replaceWith(labelButton(c)); article?.focus(); };
+    if (save && value !== c.category) {
+      const changes = c.copies.map((x) => ({ id: x.id, category: value }));
+      try { await api("POST", "/api/captures/category", { changes }); } catch (err) {
+        restore();
+        return failed(err, "change the category");
+      }
+      await load({ keepScroll: true });
+      document.querySelector(`.entry[data-id="${c.id}"]`)?.focus();
+    } else restore();
+  };
+  input.onkeydown = (e) => {
+    e.stopPropagation();
+    if (e.key === "Enter") finish(true);
+    if (e.key === "Escape") finish(false);
+  };
+  input.onblur = () => finish(true);
+}
+
+/* ---- labels ----------------------------------------------------------------- */
+function labelChips(c) {
+  const chips = c.labels.map((name) => {
+    const tag = document.createElement("span");
+    tag.className = "tag" + (state.label === name ? " on" : "");
+    tag.innerHTML = `<button class="tagname"></button><button class="tagx">×</button>`;
+    const [b, x] = tag.children;
+    highlight(b, name);
+    b.title = state.label === name ? "Show every label" : `Show only “${name}”`;
+    b.setAttribute("aria-pressed", String(state.label === name));
+    b.setAttribute("aria-label", `Label ${name}`);
+    b.onclick = (e) => { e.stopPropagation(); setLabel(state.label === name ? null : name); };
+    x.title = "Remove label";
+    x.setAttribute("aria-label", `Remove label ${name}`);
+    x.onclick = (e) => {
+      e.stopPropagation();
+      saveLabels([{ id: c.id, labels: c.labels.filter((l) => l !== name) }], `Removed the label “${name}”.`, c.id);
+    };
+    return tag;
+  });
+  if (c.labels.length < MAX_LABELS) chips.push(addLabelButton(c));
+  return chips;
+}
+
+// "minna no nihongo, lesson 18" is two labels; Japanese and full-width commas count too.
+const splitLabels = (text) => text.split(/[,，、]/).map((t) => t.trim().replace(/\s+/g, " ")).filter(Boolean);
+const sameLabel = (a, b) => foldStr(a) === foldStr(b);
+const quoted = (names) => names.map((n) => `“${n}”`).join(", ");
+
+// Add `names` after `have`, skipping repeats; whatever doesn't fit in MAX_LABELS is left out.
+function withLabels(have, names) {
+  const all = [...have];
+  for (const n of names) if (!all.some((l) => sameLabel(l, n))) all.push(n);
+  return { labels: all.slice(0, MAX_LABELS), left: all.slice(MAX_LABELS) };
+}
+
+function addLabelButton(c) {
+  const b = document.createElement("button");
+  b.className = "tagadd";
+  b.textContent = "+ label";
+  b.title = "Add a label (l)";
+  b.onclick = (e) => { e.stopPropagation(); addLabel(b, c); };
+  return b;
+}
+
+function addLabel(btn, c) {
+  const input = document.createElement("input");
+  input.className = "label-edit";
+  input.setAttribute("list", "labellist");
+  input.setAttribute("aria-label", "New labels, separated by commas");
+  input.placeholder = "e.g. minna no nihongo, lesson 18";
+  btn.replaceWith(input);
+  input.focus();
+  let done = false;
+  const finish = (save) => {
+    if (done) return;
+    done = true;
+    const { labels, left } = withLabels(c.labels, save ? splitLabels(input.value) : []);
+    const article = input.closest(".entry");
+    if (labels.length > c.labels.length) {
+      saveLabels([{ id: c.id, labels }], null, c.id, () => {
+        input.replaceWith(addLabelButton(c));
+        article?.focus();
+      });
+      if (left.length) note(`An entry holds ${MAX_LABELS} labels, so ${quoted(left)} ${left.length === 1 ? "wasn’t" : "weren’t"} added.`);
+    } else { input.replaceWith(addLabelButton(c)); article?.focus(); }
+  };
+  input.onkeydown = (e) => {
+    e.stopPropagation();
+    if (e.key === "Enter") finish(true);
+    if (e.key === "Escape") finish(false);
+  };
+  input.onblur = () => finish(true);
+}
+
+// Save new label lists; `message` offers an undo back to the old ones.
+async function saveLabels(changes, message, focusId, onFail) {
+  // An entry's labels go on every copy of its text; undo gives each copy back its own.
+  const before = copiesOf(changes.map((c) => c.id)).map((c) => ({ id: c.id, labels: c.labels || [] }));
+  changes = changes.flatMap(({ id, labels }) => copiesOf([id]).map((c) => ({ id: c.id, labels })));
+  try { await api("POST", "/api/captures/labels", { changes }); } catch (err) {
+    onFail?.();
+    return failed(err, "save the labels");
+  }
+  if (message) {
+    offerUndo(message, async () => {
+      try { await api("POST", "/api/captures/labels", { changes: before }); }
+      catch (err) { return failed(err, "undo that"); }
+      state.signature = "";
+      load({ keepScroll: true });
+    });
+  }
+  state.signature = "";
+  await load({ keepScroll: true });
+  if (focusId) document.querySelector(`.entry[data-id="${focusId}"]`)?.focus({ preventScroll: true });
+}
+
+function setLabel(name) {
+  state.label = name;
+  window.scrollTo(0, 0);
   load();
 }
 
-$("all").onchange = (e) => {
-  state.selected = e.target.checked ? new Set(state.captures.map((c) => c.id)) : new Set();
-  renderList();
-};
+function renderFilter() {
+  $("labellist").replaceChildren(...state.labels.map((l) => {
+    const o = document.createElement("option");
+    o.value = l.label;
+    return o;
+  }));
+  const f = $("labelfilter");
+  f.hidden = state.label === null;
+  if (state.label === null) return;
+  f.innerHTML = `<span></span>×`;
+  f.firstChild.textContent = state.label;
+  f.title = "Stop filtering by this label";
+  f.setAttribute("aria-label", `Showing label ${state.label}. Remove filter`);
+}
+$("labelfilter").onclick = (e) => { e.preventDefault(); setLabel(null); };
+
+function toggleFigure(el, c) {
+  const btn = el.querySelector(".figbtn");
+  const fig = el.querySelector("figure");
+  if (fig) { fig.remove(); btn.setAttribute("aria-expanded", "false"); return; }
+  const f = document.createElement("figure");
+  const img = document.createElement("img");
+  img.src = `/images/${c.image}`;
+  img.alt = "Screenshot this text was read from";
+  img.onclick = () => toggleFigure(el, c);
+  const cap = document.createElement("figcaption");
+  cap.textContent = "Captured region";
+  f.append(img, cap);
+  el.append(f);
+  btn.setAttribute("aria-expanded", "true");
+}
+
+/* ---- copy --------------------------------------------------------------- */
+let flashTimer;
+async function copyEntry(el, c) {
+  try {
+    await navigator.clipboard.writeText(c.text);
+  } catch {
+    const ta = document.createElement("textarea");
+    ta.value = c.text;
+    ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.append(ta); ta.select();
+    const ok = document.execCommand("copy");
+    ta.remove();
+    if (!ok) return failed(new Error("the browser blocked clipboard access"), "copy");
+  }
+  ticks.add(c.id);
+  el.classList.add("ticked", "just");
+  el.querySelector(".copy span").textContent = "Copied";
+  setTimeout(() => {
+    el.classList.remove("just");
+    el.querySelector(".copy span").textContent = "Copy";
+  }, 1200);
+  const folio = $("folio");
+  const head = splitText(c.text).head;
+  folio.classList.add("flash");
+  folio.innerHTML = "Copied <b></b>";
+  folio.querySelector("b").textContent = head.length > 24 ? head.slice(0, 23) + "…" : head;
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(renderFolio, 1800);
+}
+
+/* ---- selection ------------------------------------------------------------ */
+function markSelected(el, on) {
+  el.classList.toggle("sel", on);
+  el.querySelector(".mark").setAttribute("aria-pressed", String(on));
+}
+
+function toggleSelect(el, range = false) {
+  const id = Number(el.dataset.id);
+  const anchor = range && state.anchor !== null && document.querySelector(`.entry[data-id="${state.anchor}"]`);
+  if (anchor && anchor !== el) {
+    // Shift: select everything between the last box you ticked and this one, in reading order.
+    const all = [...document.querySelectorAll(".entry")];
+    const [a, b] = [all.indexOf(anchor), all.indexOf(el)].sort((x, y) => x - y);
+    for (const e of all.slice(a, b + 1)) { state.selected.add(Number(e.dataset.id)); markSelected(e, true); }
+  } else {
+    state.selected.has(id) ? state.selected.delete(id) : state.selected.add(id);
+    markSelected(el, state.selected.has(id));
+  }
+  state.anchor = id;
+  renderSelbar();
+}
+
+function setSelection(ids) {
+  state.selected = new Set(ids);
+  if (!ids.length) state.anchor = null;
+  document.querySelectorAll(".entry").forEach((el) => markSelected(el, state.selected.has(Number(el.dataset.id))));
+  renderSelbar();
+}
+
+function renderSelbar() {
+  const n = state.selected.size;
+  $("selbar").hidden = n === 0;
+  document.body.classList.toggle("selecting", n > 0);
+  $("selcount").textContent = n.toLocaleString();
+  $("bulkdel").textContent = `Delete ${n.toLocaleString()}`;
+  $("selall").textContent = `Select all ${state.captures.length.toLocaleString()} shown`;
+  $("selall").hidden = n === state.captures.length;
+  $("bulkset").disabled = !$("bulkcat").value.trim();
+  $("bulklabeladd").disabled = $("bulklabeldel").disabled = !$("bulklabel").value.trim();
+  renderFolio();
+}
+
+$("selall").onclick = () => setSelection(state.captures.map((c) => c.id));
+$("selnone").onclick = () => setSelection([]);
 $("bulkdel").onclick = () => remove([...state.selected]);
+$("bulkcat").oninput = () => { $("bulkset").disabled = !$("bulkcat").value.trim(); };
 $("bulkset").onclick = async () => {
   const category = $("bulkcat").value.trim();
-  await Promise.all([...state.selected].map((id) =>
-    api("PATCH", `/api/captures/${id}`, { category })));
-  load();
+  if (!category) return;
+  const before = copiesOf([...state.selected]).map((c) => ({ id: c.id, category: c.category }));
+  const n = state.selected.size;
+  try {
+    await api("POST", "/api/captures/category", { changes: before.map(({ id }) => ({ id, category })) });
+  } catch (err) { return failed(err, "file the selected entries"); }
+  $("bulkcat").value = "";
+  setSelection([]);
+  offerUndo(`Filed ${n === 1 ? "1 entry" : `${n.toLocaleString()} entries`} under “${category}”.`,
+    async () => {
+      try { await api("POST", "/api/captures/category", { changes: before }); }
+      catch (err) { return failed(err, "undo that"); }
+      state.signature = "";
+      load({ keepScroll: true });
+    });
+  state.signature = "";
+  load({ keepScroll: true });
 };
+$("bulkcat").onkeydown = (e) => { e.stopPropagation(); if (e.key === "Enter") $("bulkset").click(); };
+
+$("bulklabel").oninput = renderSelbar;
+$("bulklabel").onkeydown = (e) => { e.stopPropagation(); if (e.key === "Enter") $("bulklabeladd").click(); };
+const entries = (n) => (n === 1 ? "1 entry" : `${n.toLocaleString()} entries`);
+
+$("bulklabeladd").onclick = () => {
+  const names = splitLabels($("bulklabel").value);
+  if (!names.length) return;
+  const changes = [];
+  let short = 0;  // entries that couldn't take every label
+  for (const c of state.captures) {
+    if (!state.selected.has(c.id)) continue;
+    const { labels, left } = withLabels(c.labels, names);
+    if (left.some((n) => names.some((m) => sameLabel(n, m)))) short++;
+    if (labels.length > c.labels.length) changes.push({ id: c.id, labels });
+  }
+  if (!changes.length) {
+    return note(short ? `Nothing labelled: the selected entries already hold ${MAX_LABELS} labels.`
+      : `Every selected entry already has ${quoted(names)}.`);
+  }
+  $("bulklabel").value = "";
+  setSelection([]);
+  saveLabels(changes, `Labelled ${entries(changes.length)} ${quoted(names)}.`
+    + (short ? ` ${entries(short)} hit the limit of ${MAX_LABELS} labels, so not every label fit.` : ""));
+};
+
+$("bulklabeldel").onclick = () => {
+  const names = splitLabels($("bulklabel").value);
+  if (!names.length) return;
+  const named = (l) => names.some((n) => sameLabel(l, n));
+  const chosen = state.captures.filter((c) => state.selected.has(c.id) && c.labels.some(named));
+  if (!chosen.length) return note(`None of the selected entries has ${quoted(names)}.`);
+  $("bulklabel").value = "";
+  setSelection([]);
+  saveLabels(chosen.map((c) => ({ id: c.id, labels: c.labels.filter((l) => !named(l)) })),
+    `Removed ${quoted(names)} from ${entries(chosen.length)}.`);
+};
+
+/* ---- undo ------------------------------------------------------------------ */
+// The last change can be undone for a few seconds. `commit` runs when that window closes.
+let undoable = null;
+
+function offerUndo(message, undo, commit) {
+  settleUndo();
+  undoable = { undo, commit, timer: setTimeout(settleUndo, UNDO_MS) };
+  const bar = $("undo");
+  $("undomsg").textContent = message;
+  bar.hidden = false;
+  bar.classList.remove("counting");
+  void bar.offsetWidth;  // restart the countdown line
+  bar.classList.add("counting");
+}
+
+function settleUndo() {
+  if (!undoable) return;
+  const { commit, timer } = undoable;
+  undoable = null;
+  clearTimeout(timer);
+  $("undo").hidden = true;
+  commit?.();
+}
+
+function runUndo() {
+  if (!undoable) return;
+  const { undo, timer } = undoable;
+  undoable = null;
+  clearTimeout(timer);
+  $("undo").hidden = true;
+  undo();
+}
+$("undobtn").onclick = runUndo;
+
+// Deletes wait until the undo window closes; only then does the server delete them.
+let pending = null;
+
+function withoutPending(data) {
+  if (!pending) return data;
+  const gone = new Set(pending.ids);
+  const counts = new Map(data.categories.map((c) => [c.category, c.n]));
+  const counted = new Set();  // tabs count each text once, however many copies go
+  const captures = data.captures.filter((c) => {
+    if (!gone.has(c.id)) return true;
+    const key = c.category + "\0" + c.text;
+    if (!counted.has(key)) { counted.add(key); counts.set(c.category, (counts.get(c.category) || 0) - 1); }
+    return false;
+  });
+  return { ...data, captures, categories: data.categories.map((c) => ({ ...c, n: counts.get(c.category) }))
+    .filter((c) => c.n > 0) };
+}
+
+function remove(ids) {
+  settleUndo();
+  const focused = document.activeElement?.closest?.(".entry");
+  const all = [...document.querySelectorAll(".entry")];
+  const next = focused && all.slice(all.indexOf(focused) + 1).concat(all.slice(0, all.indexOf(focused)).reverse())
+    .find((el) => !ids.includes(Number(el.dataset.id)));
+  pending = { ids: copiesOf(ids).map((c) => c.id) };
+  ids.forEach((id) => state.selected.delete(id));
+  const data = withoutPending({ captures: state.captures, categories: state.categories });
+  state.byId = new Map(data.captures.map((c) => [c.id, c]));
+  state.captures = data.captures;
+  state.categories = data.categories;
+  if (state.category !== null && !state.categories.some((c) => c.category === state.category)) state.category = null;
+  state.signature = "";
+  renderTabs();
+  renderBook(Math.max(state.shown, PAGE));
+  renderSelbar();
+  const m = pending.ids.length;
+  offerUndo(m === ids.length
+    ? `Deleted ${entries(m)} and ${m === 1 ? "its screenshot" : "their screenshots"}.`
+    : `Deleted ${entries(ids.length)}: ${m.toLocaleString()} captures and their screenshots.`,
+    () => { pending = null; state.signature = ""; load({ keepScroll: true }); },
+    flushDelete);
+  if (next?.dataset.id) document.querySelector(`.entry[data-id="${next.dataset.id}"]`)?.focus({ preventScroll: true });
+}
+
+async function flushDelete() {
+  if (!pending) return;
+  const { ids } = pending;
+  pending = null;
+  try { await api("POST", "/api/captures/delete", { ids }); } catch (err) {
+    failed(err, "delete those entries");
+    state.signature = "";
+    load({ keepScroll: true });
+  }
+}
+
+window.addEventListener("pagehide", () => {
+  if (!pending) return;
+  fetch("/api/captures/delete", { method: "POST", keepalive: true,
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: pending.ids }) });
+  pending = null;
+});
+
+/* ---- folio ------------------------------------------------------------ */
+function renderFolio() {
+  if ($("folio").classList.contains("flash") && document.querySelector(".entry.just")) return;
+  const folio = $("folio");
+  folio.classList.remove("flash");
+  const n = state.captures.length, total = state.categories.reduce((a, c) => a + c.n, 0);
+  folio.innerHTML = !state.q && state.category === null && state.label === null
+    ? `<b>${total.toLocaleString()}</b> ${total === 1 ? "entry" : "entries"}`
+    : `<b>${n.toLocaleString()}</b> of ${total.toLocaleString()}`;
+}
+
+new IntersectionObserver((items) => {
+  if (items[0].isIntersecting && state.shown < state.captures.length) appendEntries(PAGE);
+}, { rootMargin: "800px" }).observe($("sentinel"));
+
+/* ---- keyboard --------------------------------------------------------------- */
+function moveFocus(dir) {
+  const cur = document.activeElement?.closest?.(".entry");
+  let all = [...document.querySelectorAll(".entry")];
+  let i = cur ? all.indexOf(cur) + dir : 0;
+  if (i >= all.length - 3 && state.shown < state.captures.length) {
+    appendEntries(PAGE);
+    all = [...document.querySelectorAll(".entry")];
+  }
+  i = Math.max(0, Math.min(all.length - 1, i));
+  all[i]?.focus();
+  all[i]?.scrollIntoView({ block: "nearest" });
+}
+
+$("skip").onclick = (e) => { e.preventDefault(); moveFocus(0); };
+
+document.addEventListener("keydown", (e) => {
+  const t = e.target;
+  if (undoable && (e.ctrlKey || e.metaKey) && e.key === "z" && !t.matches?.("input, textarea")) {
+    e.preventDefault(); runUndo(); return;
+  }
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const typing = t.matches?.("input, textarea");
+  if (t.id === "q") {
+    if (e.key === "Escape") { if (t.value) { t.value = ""; t.dispatchEvent(new Event("input")); } else t.blur(); }
+    if (e.key === "ArrowDown" || e.key === "Enter") { e.preventDefault(); moveFocus(0); }
+    return;
+  }
+  if (typing) return;
+  const el = t.closest?.(".entry");
+  switch (e.key) {
+    case "/": e.preventDefault(); $("q").focus(); $("q").select(); return;
+    case "?": $("legend").hidden ? openHelp() : closeHelp(); return;
+    case "[": stepTab(-1); return;
+    case "]": stepTab(1); return;
+    case "m": if (state.category !== null) { e.preventDefault(); openCatMenu(); } return;
+    case "u": runUndo(); return;
+    case "Escape":
+      if (state.selected.size) setSelection([]);
+      else if (state.q) { $("q").value = ""; state.q = ""; load(); }
+      else if (state.label !== null) setLabel(null);
+      return;
+  }
+  if (t.matches?.("button, summary") && (e.key === "Enter" || e.key === " ")) return;
+  if (e.key === "j" || e.key === "ArrowDown") { e.preventDefault(); moveFocus(el ? 1 : 0); return; }
+  if (e.key === "k" || e.key === "ArrowUp") { e.preventDefault(); moveFocus(el ? -1 : 0); return; }
+  if (!el) return;
+  const c = el._capture;
+  if (e.key === "Enter" || e.key === "c") { e.preventDefault(); copyEntry(el, c); }
+  else if (e.key === "x" || e.key === "X" || e.key === " ") { e.preventDefault(); toggleSelect(el, e.shiftKey); }
+  else if (e.key === "e") {
+    e.preventDefault();
+    // With several entries selected, `e` files the whole selection, like Delete does.
+    if (state.selected.has(c.id) && state.selected.size > 1) $("bulkcat").focus();
+    else { const b = el.querySelector(".label"); b && editLabel(b, c); }
+  }
+  else if (e.key === "l") {
+    e.preventDefault();
+    if (state.selected.has(c.id) && state.selected.size > 1) $("bulklabel").focus();
+    else {
+      const b = el.querySelector(".tagadd");
+      if (b) addLabel(b, c); else note(`An entry can have at most ${MAX_LABELS} labels; remove one first.`);
+    }
+  }
+  else if (e.key === "f" && c.image) { e.preventDefault(); toggleFigure(el, c); }
+  else if (e.key === "Delete" || e.key === "Backspace") {
+    e.preventDefault();
+    remove(state.selected.has(c.id) ? [...state.selected] : [c.id]);
+  }
+});
+
 let timer;
 $("q").oninput = (e) => {
   clearTimeout(timer);
-  timer = setTimeout(() => { state.q = e.target.value.trim(); load(); }, 200);
+  timer = setTimeout(() => {
+    const q = e.target.value.trim();
+    if (q === state.q) return;
+    state.q = q;
+    window.scrollTo(0, 0);
+    load();
+  }, 160);
 };
-window.onfocus = load;  // pick up captures made while the tab was in the background
+window.onfocus = () => load({ keepScroll: true });  // pick up captures made while the tab was in the background
 load();
 </script>
 </body>

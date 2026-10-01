@@ -1,1 +1,5 @@
 .venv/
+.impeccable/
+.codex/
+.claude/
+

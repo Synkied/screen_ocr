@@ -40,14 +40,19 @@ Drag to select. Esc or right-click cancels. When it finishes, a notification sho
 
 ### History
 Every capture is saved with its cropped screenshot and a guessed category
-(link, email, number, code, cjk or text). To browse them:
+(link, email, number, code, japanese, chinese, korean or text). To browse them:
 
 ```bash
 screen-ocr --web                  # opens http://127.0.0.1:8765
 ```
 
-On that page you can search, filter by category, change or bulk-set categories (type any
-name to make a new one), copy, and delete single or selected captures. Data lives in
+On that page you can search (text, categories, labels, and Japanese, Chinese or Korean
+by their reading in Latin letters: `tokyo` finds 東京, `annyeong` finds 안녕), filter by category, change or
+bulk-set categories (type any name to make a new one), give each capture up to three labels
+of your own (e.g. "minna no nihongo", "lesson 18") and filter by them, copy, and delete
+single or selected captures; identical captures show once, with a ×N count. Japanese, Chinese
+and Korean entries show their reading in Latin letters under the text. After updating
+screen-ocr, run `pip install -e .` again (it may need new packages) and restart `--web`. Data lives in
 `~/.local/share/screen-ocr/` (macOS: `~/Library/Application Support/screen-ocr/`).
 Pass `--no-save` to keep a capture out of the history.
 
