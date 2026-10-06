@@ -1064,14 +1064,18 @@ function splitText(text) {
   const rest = lines.slice(first + 1).join("\n").replace(/^\s*\n/, "");
   const headAt = lines.slice(0, first).join("\n").length + (first ? 1 : 0) + line.length - line.trimStart().length;
   const head = line.trim();
-  if (head.length <= HEAD_MAX && trimmed.length - headAt <= LONG_TEXT)
+  // A word and its definition: a short headword, then one line that doesn't carry on its sentence.
+  const gloss = rest.trim();
+  const carriesOn = /[\p{Ll},]$/u.test(head) && /^\p{Ll}/u.test(gloss);
+  if (head.length <= WORD_MAX && !gloss.includes("\n") && gloss.length <= GLOSS_MAX && !carriesOn)
     return { head, rest, headAt, restAt: trimmed.length - rest.length };
-  // A long transcript isn't a word and its definition: the headword is only its opening
-  // words, and the body holds all of it, so nothing is cut between the two.
+  // Anything more isn't a word and its definition but a transcript, which OCR breaks
+  // wherever the screen wrapped: the headword is only its opening words, and the body
+  // holds all of it, so nothing is cut between the two.
   return { head: excerpt(head), rest: trimmed.slice(headAt), headAt, restAt: headAt, excerpt: head.length > HEAD_MAX };
 }
 
-const HEAD_MAX = 60, LONG_TEXT = 280;
+const WORD_MAX = 20, GLOSS_MAX = 160, HEAD_MAX = 60;
 
 // The opening of `line`, ended at a space when there's one late enough. Shown with a CSS ellipsis.
 function excerpt(line) {
