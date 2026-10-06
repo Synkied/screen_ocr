@@ -247,6 +247,7 @@
         overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
         overflow: hidden; cursor: copy; text-wrap: pretty; }
   .entry:lang(ja) .hw, .entry:lang(ko) .hw { word-break: auto-phrase; }
+  .hw.excerpt::after { content: "…"; }
   .hw:hover { text-decoration: underline; text-decoration-color: var(--rule); text-underline-offset: .2em; }
   .entry.code .hw, .entry.code .body { font-family: var(--mono); font-weight: 500; }
   .entry.code .hw { font-size: 1rem; line-height: 1.5; }
@@ -1062,7 +1063,21 @@ function splitText(text) {
   const line = lines[first];
   const rest = lines.slice(first + 1).join("\n").replace(/^\s*\n/, "");
   const headAt = lines.slice(0, first).join("\n").length + (first ? 1 : 0) + line.length - line.trimStart().length;
-  return { head: line.trim(), rest, headAt, restAt: trimmed.length - rest.length };
+  const head = line.trim();
+  if (head.length <= HEAD_MAX && trimmed.length - headAt <= LONG_TEXT)
+    return { head, rest, headAt, restAt: trimmed.length - rest.length };
+  // A long transcript isn't a word and its definition: the headword is only its opening
+  // words, and the body holds all of it, so nothing is cut between the two.
+  return { head: excerpt(head), rest: trimmed.slice(headAt), headAt, restAt: headAt, excerpt: head.length > HEAD_MAX };
+}
+
+const HEAD_MAX = 60, LONG_TEXT = 280;
+
+// The opening of `line`, ended at a space when there's one late enough. Shown with a CSS ellipsis.
+function excerpt(line) {
+  if (line.length <= HEAD_MAX) return line;
+  const cut = line.lastIndexOf(" ", HEAD_MAX);
+  return line.slice(0, cut > HEAD_MAX / 2 ? cut : HEAD_MAX).trimEnd();
 }
 
 const KANA = /[぀-ヿｦ-ﾟ]/, HANGUL = /[가-힯]/, HAN = /[㐀-䶿一-鿿]/;
@@ -1215,7 +1230,7 @@ function readable(head) {
 const icon = (name) => `<svg class="i" aria-hidden="true"><use href="#i-${name}"/></svg>`;
 
 function entry(c) {
-  const { head, rest, headAt, restAt } = parts(c);
+  const { head, rest, headAt, restAt, excerpt: cut } = parts(c);
   const short = head.length > 40 ? head.slice(0, 39) + "…" : head;
   const el = document.createElement("article");
   el.className = "entry" + (c.category === "code" ? " code" : c.category === "ascii" ? " ascii" : "")
@@ -1236,6 +1251,7 @@ function entry(c) {
   const spans = lang === "ja" ? rubySpans(c.text, c.furigana) : [];
   const shown = readable(head);
   highlight(el.querySelector(".hw"), shown, shown === head ? spans : [], headAt);
+  if (cut) el.querySelector(".hw").classList.add("excerpt");
   const reading = readingFor(c);
   if (reading) el.querySelector(".hwline").after(reading);
   el.querySelector(".mark").setAttribute("aria-label", `Select “${short}”`);
